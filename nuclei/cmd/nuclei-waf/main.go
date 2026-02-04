@@ -7,6 +7,7 @@ import (
 	"os/signal"
 
 	"github.com/projectdiscovery/gologger"
+	"github.com/projectdiscovery/gologger/levels"
 	"github.com/projectdiscovery/goflags"
 	"github.com/projectdiscovery/nuclei/v3/pkg/waftest"
 )
@@ -15,7 +16,7 @@ import (
 
 func main() {
 	// Initialize logger
-	gologger.DefaultLogger.SetMaxLevel(gologger.Info)
+	gologger.DefaultLogger.SetMaxLevel(levels.LevelInfo)
 
 	// Parse flags
 	config := parseWAFFlags()
@@ -121,9 +122,9 @@ For more information, see: user_guide.md
 
 	// Set log level
 	if config.Verbose {
-		gologger.DefaultLogger.SetMaxLevel(gologger.Debug)
+		gologger.DefaultLogger.SetMaxLevel(levels.LevelDebug)
 	} else if config.Silent {
-		gologger.DefaultLogger.SetMaxLevel(gologger.Silent)
+		gologger.DefaultLogger.SetMaxLevel(levels.LevelSilent)
 	}
 
 	// Handle reset flag

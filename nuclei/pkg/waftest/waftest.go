@@ -8,9 +8,7 @@ import (
 	"time"
 
 	"github.com/projectdiscovery/gologger"
-	"github.com/projectdiscovery/nuclei/v3/pkg/catalog"
 	"github.com/projectdiscovery/nuclei/v3/pkg/output"
-	"github.com/projectdiscovery/nuclei/v3/pkg/templates"
 	"github.com/pkg/errors"
 )
 
@@ -24,7 +22,6 @@ type WAFTester struct {
 	stateManager  *StateManager
 	csvWriter     *output.CSVWriter
 	detector      *WAFBypassDetector
-	catalog       *catalog.Catalog
 }
 
 // Config holds configuration for WAF testing
@@ -146,7 +143,7 @@ func (wt *WAFTester) PrintSummary() {
 
 // PrintFinalSummary prints the final summary report
 func (wt *WAFTester) PrintFinalSummary() {
-	completed, total, bypassed, blocked := wt.stateManager.GetProgress()
+	completed, _, bypassed, blocked := wt.stateManager.GetProgress()
 	rate := wt.stateManager.GetBypassRate()
 
 	fmt.Println()
