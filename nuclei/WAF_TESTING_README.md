@@ -1,16 +1,16 @@
-# WAF Testing Tool - Hướng Dẫn Sử Dụng
+# WAF Testing Tool - User Guide
 
-## 📖 Tổng Quan
+## 📖 Overview
 
-Tool này là custom modification của Nuclei engine để test hiệu quả của WAF (Web Application Firewall). Tool sẽ chạy các Nuclei templates và kiểm tra xem payload có bypass được WAF hay không.
+This tool is a custom modification of the Nuclei engine designed to test Web Application Firewall (WAF) effectiveness. It runs Nuclei templates and checks whether payloads successfully bypass the WAF.
 
-**WAF Bypass được xác định khi**:
+**A WAF bypass is detected when**:
 - ✅ HTTP Status Code = **200**
 - ✅ Response Header `X-WAF-Status` = **`Passed`**
 
 ---
 
-## 🚀 Build Tool
+## 🚀 Building the Tool
 
 ```powershell
 # Navigate to nuclei directory
@@ -25,56 +25,56 @@ go build -o nuclei-waf.exe ./cmd/nuclei-waf
 
 ---
 
-## 💡 Sử Dụng Cơ Bản
+## 💡 Basic Usage
 
-### Cú pháp
+### Syntax
 
 ```powershell
 .\nuclei-waf.exe -t <TEMPLATE_DIR> -u <TARGET_URL> [OPTIONS]
 ```
 
-### Ví dụ đơn giản
+### Simple Example
 
 ```powershell
 .\nuclei-waf.exe -t "C:\Payloads\CVE" -u "https://testapp.local"
 ```
 
-**Kết quả**:
-- 📄 `waf_test_results.csv` - Tất cả kết quả test
-- 📄 `waf_test_results_bypassed.csv` - Chỉ các payload bypass thành công
-- 📄 `waf_test_state.json` - File tracking tiến trình
+**Output Files**:
+- 📄 `waf_test_results.csv` - All test results
+- 📄 `waf_test_results_bypassed.csv` - Only successful bypasses
+- 📄 `waf_test_state.json` - Progress tracking file
 
 ---
 
-## 🎯 Các Tính Năng Chính
+## 🎯 Key Features
 
-### 1️⃣ Progressive Execution (Chạy Từng Batch)
+### 1️⃣ Progressive Execution (Batch Processing)
 
-Tool chạy templates theo batch (mặc định 10 templates/lần) và lưu tiến trình:
+The tool runs templates in batches (default 10 templates at a time) and saves progress:
 
 ```powershell
-# Chạy batch 1 (templates 1-10)
+# Run batch 1 (templates 1-10)
 .\nuclei-waf.exe -t "C:\Payloads" -u "https://example.com" -bs 10
 
-# Nhấn Ctrl+C để dừng
+# Press Ctrl+C to stop
 
-# Chạy tiếp batch 2 (templates 11-20) - tự động skip batch 1
+# Run batch 2 (templates 11-20) - automatically skips batch 1
 .\nuclei-waf.exe -t "C:\Payloads" -u "https://example.com" -bs 10
 ```
 
-### 2️⃣ Dual CSV Output (2 File Kết Quả)
+### 2️⃣ Dual CSV Output (Two Result Files)
 
 **File 1: Comprehensive** (`waf_test_results.csv`)
-- Chứa TẤT CẢ kết quả test (cả bypass và blocked)
-- Dùng để audit đầy đủ
+- Contains ALL test results (both bypassed and blocked)
+- Use for complete audit
 
 **File 2: Bypassed Only** (`waf_test_results_bypassed.csv`)
-- Chỉ chứa các payload bypass thành công
-- Dùng để fix ngay các lỗ hổng
+- Contains only successful bypasses
+- Use for immediate remediation
 
-### 3️⃣ Summary Statistics (Thống Kê Tổng Hợp)
+### 3️⃣ Summary Statistics
 
-Sau mỗi batch, tool hiển thị:
+After each batch, the tool displays:
 ```
 ═══════════════════════════════════════════════════════════
 Results: 7/10 bypassed (70.0%)
@@ -82,7 +82,7 @@ Cumulative: 7/10 templates completed
 ═══════════════════════════════════════════════════════════
 ```
 
-Khi hoàn thành:
+Upon completion:
 ```
 ╔════════════════════════════════════════════════════════════╗
 ║              WAF Testing Summary Report                    ║
@@ -94,40 +94,67 @@ Khi hoàn thành:
 ╚════════════════════════════════════════════════════════════╝
 ```
 
+### 4️⃣ State Management (Template Tracking)
+
+**Automatic Resume**: The tool tracks completed templates and never re-runs them.
+
+```powershell
+# First run (completes 30 templates)
+.\nuclei-waf.exe -t "C:\Payloads" -u "https://example.com"
+
+# Second run (automatically continues from template 31)
+.\nuclei-waf.exe -t "C:\Payloads" -u "https://example.com"
+```
+
+**State File** (`waf_test_state.json`):
+```json
+{
+  "completed_templates": [
+    "C:\\Payloads\\CVE\\CVE-2016-0001.yaml",
+    "C:\\Payloads\\CVE\\CVE-2016-0002.yaml"
+  ],
+  "last_batch_index": 10,
+  "total_templates": 100,
+  "bypassed_count": 7,
+  "blocked_count": 3,
+  "last_updated": "2026-02-04T10:15:30+07:00"
+}
+```
+
 ---
 
 ## 🔧 Command-Line Flags
 
-### Required (Bắt buộc)
+### Required Flags
 
-| Flag | Short | Mô tả | Ví dụ |
-|------|-------|-------|-------|
-| `--template-dir` | `-t` | Thư mục chứa templates | `-t "C:\Payloads\CVE"` |
-| `--target` | `-u` | URL target để test | `-u "https://example.com"` |
+| Flag | Short | Description | Example |
+|------|-------|-------------|---------|
+| `--template-dir` | `-t` | Templates directory path | `-t "C:\Payloads\CVE"` |
+| `--target` | `-u` | Target URL to test | `-u "https://example.com"` |
 
-### Optional (Tùy chọn)
+### Optional Flags
 
-| Flag | Short | Default | Mô tả |
-|------|-------|---------|-------|
-| `--csv-output` | `-o` | `waf_test_results.csv` | File CSV tổng hợp |
-| `--csv-bypassed` | `-ob` | Auto | File CSV chỉ bypass |
-| `--state-file` | `-sf` | `waf_test_state.json` | File lưu tiến trình |
-| `--batch-size` | `-bs` | `10` | Số templates/batch |
-| `--reset` | `-r` | `false` | Reset và chạy lại từ đầu |
-| `--verbose` | `-v` | `false` | Hiển thị chi tiết |
-| `--silent` | `-s` | `false` | Chỉ hiển thị summary |
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--csv-output` | `-o` | `waf_test_results.csv` | Comprehensive CSV file |
+| `--csv-bypassed` | `-ob` | Auto-generated | Bypassed-only CSV file |
+| `--state-file` | `-sf` | `waf_test_state.json` | State file path |
+| `--batch-size` | `-bs` | `10` | Templates per batch |
+| `--reset` | `-r` | `false` | Reset state and start fresh |
+| `--verbose` | `-v` | `false` | Enable verbose output |
+| `--silent` | `-s` | `false` | Silent mode (summary only) |
 
 ---
 
-## 📋 Ví Dụ Sử Dụng
+## 📋 Usage Examples
 
-### Ví dụ 1: Test WAF với batch size 20
+### Example 1: Test WAF with batch size 20
 
 ```powershell
 .\nuclei-waf.exe -t "C:\Payloads\OWASP" -u "https://example.com" -bs 20
 ```
 
-### Ví dụ 2: Custom output files
+### Example 2: Custom output files
 
 ```powershell
 .\nuclei-waf.exe `
@@ -137,13 +164,13 @@ Khi hoàn thành:
   -ob "dangerous_payloads.csv"
 ```
 
-### Ví dụ 3: Reset và chạy lại từ đầu
+### Example 3: Reset and start fresh
 
 ```powershell
 .\nuclei-waf.exe -t "C:\Payloads" -u "https://example.com" --reset
 ```
 
-### Ví dụ 4: Verbose mode
+### Example 4: Verbose mode
 
 ```powershell
 .\nuclei-waf.exe -t "C:\Payloads" -u "https://example.com" -v
@@ -151,7 +178,7 @@ Khi hoàn thành:
 
 ---
 
-## 📊 Format CSV Output
+## 📊 CSV Output Format
 
 ### Comprehensive CSV
 
@@ -170,96 +197,97 @@ CVE-2016-0001,SQL Injection,high,https://example.com/search,Bypassed,200,Passed,
 
 ---
 
-## 🔄 Workflow Thực Tế
+## 🔄 Real-World Workflow
 
-### Scenario 1: Test WAF lần đầu
+### Scenario 1: First-time WAF Testing
 
 ```powershell
 # 1. Build tool
 go build -o nuclei-waf.exe ./cmd/nuclei-waf
 
-# 2. Chạy test
+# 2. Run test
 .\nuclei-waf.exe -t "C:\Payloads\CVE" -u "https://prod.example.com"
 
-# 3. Review kết quả bypass
+# 3. Review bypassed payloads
 Import-Csv waf_test_results_bypassed.csv | Format-Table
 
-# 4. Fix WAF rules dựa trên kết quả
+# 4. Fix WAF rules based on results
 
-# 5. Test lại để verify
+# 5. Re-test to verify fixes
 .\nuclei-waf.exe -t "C:\Payloads\CVE" -u "https://prod.example.com" --reset
 ```
 
 ### Scenario 2: Progressive Testing
 
 ```powershell
-# Chạy 10 templates đầu
+# Run first 10 templates
 .\nuclei-waf.exe -t "C:\Payloads" -u "https://example.com" -bs 10
 
-# Dừng lại review kết quả
+# Stop and review results
 Import-Csv waf_test_results.csv | Format-Table
 
-# Tiếp tục 10 templates tiếp theo
+# Continue with next 10 templates
 .\nuclei-waf.exe -t "C:\Payloads" -u "https://example.com" -bs 10
 
-# Lặp lại cho đến hết
+# Repeat until complete
 ```
 
 ---
 
 ## ❓ Troubleshooting
 
-### Lỗi: "Template directory is required"
+### Error: "Template directory is required"
 
-**Nguyên nhân**: Thiếu flag `-t`
+**Cause**: Missing `-t` flag
 
-**Giải pháp**:
+**Solution**:
 ```powershell
 .\nuclei-waf.exe -t "C:\Payloads" -u "https://example.com"
 ```
 
-### Lỗi: "No templates found"
+### Error: "No templates found"
 
-**Nguyên nhân**: Thư mục templates rỗng hoặc đường dẫn sai
+**Cause**: Template directory is empty or path is incorrect
 
-**Giải pháp**:
+**Solution**:
 ```powershell
-# Kiểm tra templates có tồn tại
+# Check if templates exist
 dir "C:\Payloads\*.yaml"
 
-# Dùng đường dẫn đúng
+# Use correct path
 .\nuclei-waf.exe -t "C:\Payloads\CVE" -u "https://example.com"
 ```
 
-### Muốn chạy lại từ đầu
+### Want to start over
 
-**Giải pháp 1**: Dùng flag `--reset`
+**Solution 1**: Use `--reset` flag
 ```powershell
 .\nuclei-waf.exe -t "C:\Payloads" -u "https://example.com" --reset
 ```
 
-**Giải pháp 2**: Xóa file state thủ công
+**Solution 2**: Manually delete files
 ```powershell
 del waf_test_state.json
-.\nuclei-waf.exe -t "C:\Payloads" -u "https://example.com"
+del waf_test_results.csv
+del waf_test_results_bypassed.csv
 ```
 
-### Tất cả kết quả đều "Blocked"
+### All results show "Blocked"
 
-**Nguyên nhân**: Target không trả về header `X-WAF-Status: Passed`
+**Cause**: Target not returning `X-WAF-Status: Passed` header
 
-**Giải pháp**: Kiểm tra cấu hình WAF/target application phải trả về header này khi bypass thành công
+**Solution**: Verify WAF/target application is configured to return this header on successful bypass
 
 ---
 
-## 📚 Documentation Đầy Đủ
+## 📚 Additional Documentation
 
-Các file documentation chi tiết trong thư mục artifacts:
+For detailed technical documentation, see the artifacts directory:
 
-1. **[FINAL_SUMMARY.md](file:///C:/Users/minht/.gemini/antigravity/brain/bad82065-81e4-4653-9183-f36bbef5701d/FINAL_SUMMARY.md)** - Tổng hợp toàn bộ
-2. **[quick_start.md](file:///C:/Users/minht/.gemini/antigravity/brain/bad82065-81e4-4653-9183-f36bbef5701d/quick_start.md)** - Hướng dẫn nhanh
-3. **[user_guide.md](file:///C:/Users/minht/.gemini/antigravity/brain/bad82065-81e4-4653-9183-f36bbef5701d/user_guide.md)** - Hướng dẫn chi tiết
-4. **[walkthrough.md](file:///C:/Users/minht/.gemini/antigravity/brain/bad82065-81e4-4653-9183-f36bbef5701d/walkthrough.md)** - Technical details
+1. **[FINAL_SUMMARY.md](file:///C:/Users/minht/.gemini/antigravity/brain/bad82065-81e4-4653-9183-f36bbef5701d/FINAL_SUMMARY.md)** - Complete overview
+2. **[quick_start.md](file:///C:/Users/minht/.gemini/antigravity/brain/bad82065-81e4-4653-9183-f36bbef5701d/quick_start.md)** - Quick start guide
+3. **[user_guide.md](file:///C:/Users/minht/.gemini/antigravity/brain/bad82065-81e4-4653-9183-f36bbef5701d/user_guide.md)** - Detailed user manual
+4. **[walkthrough.md](file:///C:/Users/minht/.gemini/antigravity/brain/bad82065-81e4-4653-9183-f36bbef5701d/walkthrough.md)** - Technical implementation
 5. **[feature_summary.md](file:///C:/Users/minht/.gemini/antigravity/brain/bad82065-81e4-4653-9183-f36bbef5701d/feature_summary.md)** - Feature overview
 
 ---
@@ -282,22 +310,45 @@ Các file documentation chi tiết trong thư mục artifacts:
 # Verbose mode
 .\nuclei-waf.exe -t "C:\Payloads" -u "https://example.com" -v
 
-# Silent mode (only summary)
+# Silent mode (summary only)
 .\nuclei-waf.exe -t "C:\Payloads" -u "https://example.com" -s
 ```
 
 ---
 
-## ✅ Checklist Trước Khi Chạy
+## 📦 Resource Requirements
 
-- [ ] Đã build tool: `go build -o nuclei-waf.exe ./cmd/nuclei-waf`
-- [ ] Có templates trong thư mục chỉ định
-- [ ] Target URL accessible
-- [ ] Target application configured để trả về `X-WAF-Status` header
-- [ ] Đủ disk space cho output files
+**Source Code** (new additions):
+- 8 Go files: ~50 KB
+- Very lightweight addition to codebase
+
+**Executable** (after build):
+- `nuclei-waf.exe`: **~45 MB**
+- Similar to original Nuclei size
+
+**Go Dependencies** (already included with Nuclei):
+- ~200+ packages
+- ~1-2 GB in `$GOPATH/pkg/mod`
+- Downloaded once, reused for subsequent builds
+
+**Runtime** (when running):
+- RAM: **~100-200 MB** (depends on batch size)
+- Disk for output: **Minimal**
+  - CSV files: ~1-10 MB (depends on template count)
+  - State file: <1 MB
+
+---
+
+## ✅ Pre-Run Checklist
+
+- [ ] Tool built: `go build -o nuclei-waf.exe ./cmd/nuclei-waf`
+- [ ] Templates exist in specified directory
+- [ ] Target URL is accessible
+- [ ] Target application configured to return `X-WAF-Status` header
+- [ ] Sufficient disk space for output files
 
 ---
 
 **Happy Testing! 🚀**
 
-Nếu có vấn đề, xem các file documentation chi tiết ở trên hoặc check source code trong `pkg/waftest/`.
+For issues or questions, check the detailed documentation files listed above or review the source code in `pkg/waftest/`.
