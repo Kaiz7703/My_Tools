@@ -15,6 +15,7 @@ import (
 // WAFTester orchestrates WAF testing with progressive execution
 type WAFTester struct {
 	templateDir   string
+	target        string
 	batchSize     int
 	stateFile     string
 	csvOutput     string
@@ -69,6 +70,7 @@ func NewWAFTester(config *Config) (*WAFTester, error) {
 
 	return &WAFTester{
 		templateDir:  config.TemplateDir,
+		target:       config.Target,
 		batchSize:    config.BatchSize,
 		stateFile:    config.StateFile,
 		csvOutput:    config.CSVOutput,
@@ -113,19 +115,45 @@ func (wt *WAFTester) ExecuteBatch(ctx context.Context, templates []string) error
 	gologger.Info().Msgf("Executing batch of %d templates...", len(templates))
 	startTime := time.Now()
 
-	// TODO: Integrate with actual Nuclei execution engine
-	// For now, this is a placeholder that simulates execution
+	// Create Nuclei executor (uses real Nuclei engine)
+	executor, err := NewNucleiExecutor(
+		wt.target,
+		wt.detector,
+		wt.csvWriter,
+		wt.stateManager,
+	)
+	if err != nil {
+		return errors.Wrap(err, "failed to create Nuclei executor")
+	}
+	defer executor.Close()
+
+	// Execute each template using Nuclei engine
+	successCount := 0
+	failCount := 0
+	
 	for _, tmplPath := range templates {
-		// Simulate template execution
-		// In real implementation, this would use Nuclei's execution engine
-		gologger.Debug().Msgf("Processing template: %s", filepath.Base(tmplPath))
+		select {
+		case <-ctx.Done():
+			gologger.Warning().Msg("Batch execution cancelled by user")
+			return ctx.Err()
+		default:
+		}
+
+		gologger.Debug().Msgf("Executing template: %s", filepath.Base(tmplPath))
 		
-		// Mark as completed
-		wt.stateManager.MarkCompleted([]string{tmplPath})
+		if err := executor.Execute(ctx, tmplPath); err != nil {
+			gologger.Warning().Msgf("Template execution failed: %s - %v", 
+				filepath.Base(tmplPath), err)
+			failCount++
+			continue
+		}
+		
+		successCount++
 	}
 
 	elapsed := time.Since(startTime)
-	gologger.Info().Msgf("Batch completed in %s", elapsed)
+	gologger.Info().Msgf("Batch completed in %s (%d success, %d failed)", 
+		elapsed, successCount, failCount)
 
 	return nil
 }

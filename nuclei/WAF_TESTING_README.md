@@ -2,7 +2,14 @@
 
 ## 📖 Overview
 
-This tool is a custom modification of the Nuclei engine designed to test Web Application Firewall (WAF) effectiveness. It runs Nuclei templates and checks whether payloads successfully bypass the WAF.
+This tool is a custom modification of Nuclei that uses the **full Nuclei execution engine** to test Web Application Firewall (WAF) effectiveness. It runs Nuclei templates with complete support for all Nuclei features (matchers, extractors, variables, payloads, DSL functions) and checks whether payloads successfully bypass the WAF.
+
+**Key Features**:
+- ✅ **Full Nuclei Engine Integration** - Uses `templates.Parse()` and `ExecuteWithResults()` for complete template support
+- ✅ **All Template Types** - HTTP GET/POST, raw HTTP, matchers, extractors, variables, payloads, fuzzing
+- ✅ **WAF Bypass Detection** - Automatically detects successful bypasses
+- ✅ **Dual CSV Output** - Comprehensive results + bypassed-only results
+- ✅ **Progressive Execution** - Resume capability with state management
 
 **A WAF bypass is detected when**:
 - ✅ HTTP Status Code = **200**
