@@ -12,16 +12,69 @@ This tool is a custom modification of the Nuclei engine designed to test Web App
 
 ## 🚀 Building the Tool
 
+### Option 1: Automated Build (Recommended)
+
+**Windows (PowerShell)**:
 ```powershell
 # Navigate to nuclei directory
 cd c:\Users\minht\Downloads\Open\My_Tools\nuclei
 
-# Build WAF testing tool
-go build -o nuclei-waf.exe ./cmd/nuclei-waf
+# Run build script (builds for all platforms)
+.\build.ps1
 
-# Verify build
+# Verify Windows build
 .\nuclei-waf.exe --help
 ```
+
+**Linux / macOS (Bash)**:
+```bash
+# Navigate to nuclei directory
+cd ~/My_Tools/nuclei
+
+# Make script executable
+chmod +x build.sh
+
+# Run build script (builds for all platforms)
+./build.sh
+
+# Verify build
+./nuclei-waf --help
+```
+
+### Option 2: Manual Build (Single Platform)
+
+**Windows**:
+```powershell
+go build -o nuclei-waf.exe ./cmd/nuclei-waf
+```
+
+**Linux**:
+```bash
+go build -o nuclei-waf ./cmd/nuclei-waf
+```
+
+**macOS**:
+```bash
+go build -o nuclei-waf ./cmd/nuclei-waf
+```
+
+### Option 3: Cross-Compilation (Build for Other Platforms)
+
+**From Windows to Linux**:
+```powershell
+$env:GOOS = "linux"
+$env:GOARCH = "amd64"
+go build -o nuclei-waf-linux ./cmd/nuclei-waf
+```
+
+**From Linux/macOS to Windows**:
+```bash
+GOOS=windows GOARCH=amd64 go build -o nuclei-waf.exe ./cmd/nuclei-waf
+```
+
+**All Platforms at Once**:
+- Windows: Run `.\build.ps1`
+- Linux/macOS: Run `./build.sh`
 
 ---
 
@@ -29,14 +82,26 @@ go build -o nuclei-waf.exe ./cmd/nuclei-waf
 
 ### Syntax
 
+**Windows**:
 ```powershell
 .\nuclei-waf.exe -t <TEMPLATE_DIR> -u <TARGET_URL> [OPTIONS]
 ```
 
+**Linux/macOS**:
+```bash
+./nuclei-waf -t <TEMPLATE_DIR> -u <TARGET_URL> [OPTIONS]
+```
+
 ### Simple Example
 
+**Windows**:
 ```powershell
 .\nuclei-waf.exe -t "C:\Payloads\CVE" -u "https://testapp.local"
+```
+
+**Linux/macOS**:
+```bash
+./nuclei-waf -t "/opt/payloads/CVE" -u "https://testapp.local"
 ```
 
 **Output Files**:
@@ -323,8 +388,10 @@ For detailed technical documentation, see the artifacts directory:
 - Very lightweight addition to codebase
 
 **Executable** (after build):
-- `nuclei-waf.exe`: **~45 MB**
-- Similar to original Nuclei size
+- **Windows**: `nuclei-waf.exe` (~45 MB)
+- **Linux**: `nuclei-waf` (~45 MB)
+- **macOS**: `nuclei-waf` (~45 MB)
+- Portable - just copy and run!
 
 **Go Dependencies** (already included with Nuclei):
 - ~200+ packages
@@ -341,7 +408,7 @@ For detailed technical documentation, see the artifacts directory:
 
 ## ✅ Pre-Run Checklist
 
-- [ ] Tool built: `go build -o nuclei-waf.exe ./cmd/nuclei-waf`
+- [ ] Tool built for your platform
 - [ ] Templates exist in specified directory
 - [ ] Target URL is accessible
 - [ ] Target application configured to return `X-WAF-Status` header
