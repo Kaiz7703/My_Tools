@@ -36,6 +36,7 @@ type Config struct {
 	Verbose     bool
 	Silent      bool
 	ResetState  bool
+	DetectionMode string // strict or header
 }
 
 // NewWAFTester creates a new WAF tester
@@ -66,7 +67,7 @@ func NewWAFTester(config *Config) (*WAFTester, error) {
 	}
 
 	// Initialize WAF bypass detector
-	detector := NewWAFBypassDetector()
+	detector := NewWAFBypassDetector(config.DetectionMode)
 
 	return &WAFTester{
 		templateDir:  config.TemplateDir,

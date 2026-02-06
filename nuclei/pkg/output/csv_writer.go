@@ -35,6 +35,8 @@ type WAFResult struct {
 	WAFStatusHeader  string
 	Timestamp        time.Time
 	Payload          string
+	FlowIndex        int
+	TotalFlow        int
 }
 
 // NewCSVWriter creates a new CSV writer for WAF testing
@@ -98,7 +100,11 @@ func (w *CSVWriter) writeHeaders() error {
 		"HTTP Status Code",
 		"X-WAF-Status Header",
 		"Timestamp",
+		"WAF Status Header",
+		"Timestamp",
 		"Payload",
+		"Flow Index",
+		"Total Flow",
 	}
 
 	// Write to comprehensive file
@@ -137,7 +143,10 @@ func (w *CSVWriter) Write(result *WAFResult) error {
 		fmt.Sprintf("%d", result.HTTPStatusCode),
 		result.WAFStatusHeader,
 		result.Timestamp.Format("2006-01-02 15:04:05"),
+		result.Timestamp.Format("2006-01-02 15:04:05"),
 		result.Payload,
+		fmt.Sprintf("%d", result.FlowIndex),
+		fmt.Sprintf("%d", result.TotalFlow),
 	}
 
 	// Write to comprehensive file
