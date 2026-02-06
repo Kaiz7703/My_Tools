@@ -203,41 +203,32 @@ func (wt *WAFTester) Run(ctx context.Context) error {
 		return errors.New("no templates found")
 	}
 
-	// Main execution loop
-	batchNum := 1
-	for {
-		// Check context cancellation
-		select {
-		case <-ctx.Done():
-			gologger.Warning().Msg("Execution cancelled by user")
-			return ctx.Err()
-		default:
-		}
-
-		// Get next batch
-		batch := wt.stateManager.GetNextBatch(allTemplates, wt.batchSize)
-		if len(batch) == 0 {
-			gologger.Info().Msg("All templates completed!")
-			break
-		}
-
-		gologger.Info().Msgf("Starting batch %d/%d", batchNum, (len(allTemplates)+wt.batchSize-1)/wt.batchSize)
-
-		// Execute batch
-		if err := wt.ExecuteBatch(ctx, batch); err != nil {
-			return errors.Wrap(err, "batch execution failed")
-		}
-
-		// Save state
-		if err := wt.stateManager.SaveState(); err != nil {
-			gologger.Warning().Msgf("Failed to save state: %v", err)
-		}
-
-		// Print summary
-		wt.PrintSummary()
-
-		batchNum++
+	// Get next batch
+	batch := wt.stateManager.GetNextBatch(allTemplates, wt.batchSize)
+	if len(batch) == 0 {
+		gologger.Info().Msg("All templates completed! No new templates to run.")
+		wt.PrintFinalSummary()
+		return nil
 	}
+
+	gologger.Info().Msgf("Resume Mode: Executing next %d templates (Batch Size: %d)", len(batch), wt.batchSize)
+
+	// Execute batch
+	if err := wt.ExecuteBatch(ctx, batch); err != nil {
+		return errors.Wrap(err, "batch execution failed")
+	}
+
+	// Save state
+	if err := wt.stateManager.SaveState(); err != nil {
+		gologger.Warning().Msgf("Failed to save state: %v", err)
+	}
+
+	// Print summary
+	wt.PrintSummary()
+	
+	// Print hint for next run
+	// Logic to check remaining is implicit implies we are done with THIS batch.
+	gologger.Info().Msg("Batch execution completed. Run again to process next batch.")
 
 	// Print final summary
 	wt.PrintFinalSummary()

@@ -5,14 +5,19 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/logrusorgru/aurora"
 	"github.com/projectdiscovery/gologger"
 	"github.com/projectdiscovery/nuclei/v3/pkg/catalog"
 	"github.com/projectdiscovery/nuclei/v3/pkg/catalog/config"
 	"github.com/projectdiscovery/nuclei/v3/pkg/catalog/disk"
 	"github.com/projectdiscovery/nuclei/v3/pkg/output"
+	"github.com/projectdiscovery/nuclei/v3/pkg/operators"
+	"github.com/projectdiscovery/nuclei/v3/pkg/operators/matchers"
 	"github.com/projectdiscovery/nuclei/v3/pkg/protocols"
 	"github.com/projectdiscovery/nuclei/v3/pkg/protocols/common/contextargs"
+	"github.com/projectdiscovery/nuclei/v3/pkg/protocols/common/protocolinit"
 	"github.com/projectdiscovery/nuclei/v3/pkg/scan"
 	"github.com/projectdiscovery/nuclei/v3/pkg/templates"
 	"github.com/projectdiscovery/nuclei/v3/pkg/types"
@@ -62,12 +67,20 @@ func NewNucleiExecutor(target string, detector *WAFBypassDetector,
 	parser.ShouldValidate = false
 	parser.NoStrictSyntax = true
 
+	// Initialize all protocol clients (DNS, HTTP, Network, etc.)
+	// This MUST be called before creating ExecutorOptions
+	if err := protocolinit.Init(options); err != nil {
+		return nil, fmt.Errorf("failed to initialize protocols: %w", err)
+	}
+
 	// Create executor options
 	executorOpts := &protocols.ExecutorOptions{
 		Options:  options,
 		Catalog:  catalogInstance,
-		Progress: nil,
+		Progress: &VoidProgress{}, // Fix: Set progress tracker to prevent nil pointer panic
 		Logger:   gologger.DefaultLogger,
+		Parser:   parser, // Required by templates.Parse()
+		Output:   &VoidWriter{}, // Fix: Set output writer to prevent nil pointer panic
 	}
 
 	return &NucleiExecutor{
@@ -84,39 +97,84 @@ func NewNucleiExecutor(target string, detector *WAFBypassDetector,
 
 // Execute executes a single template using Nuclei engine
 func (ne *NucleiExecutor) Execute(ctx context.Context, templatePath string) error {
-	// Parse template using Nuclei parser
-	parsedTemplate, err := ne.parser.ParseTemplate(templatePath, nil)
+	// Always mark template as completed, even if execution fails
+	// This prevents infinite loops when templates have errors
+	defer ne.stateManager.MarkCompleted([]string{templatePath})
+	
+	// Parse and compile template using Nuclei
+	template, err := templates.Parse(templatePath, nil, ne.executorOpts)
 	if err != nil {
 		return fmt.Errorf("failed to parse template: %w", err)
 	}
-
-	// Type assert to *templates.Template
-	template, ok := parsedTemplate.(*templates.Template)
-	if !ok {
-		return fmt.Errorf("failed to cast template to *templates.Template")
+	
+	// Skip if template is nil (e.g., global matchers)
+	if template == nil {
+		return nil
 	}
+
+	// FORCE MATCH: Override matchers to catch-all
+	// This ensures we get a result for every request with actual status code
+	ne.forceTemplateMatch(template)
 
 	// Create scan context
-	metaInput := &contextargs.MetaInput{
-		Input: ne.target,
-	}
+	metaInput := contextargs.NewMetaInput()
+	metaInput.Input = ne.target
 	ctxArgs := contextargs.New(ctx)
 	ctxArgs.MetaInput = metaInput
 	scanCtx := scan.NewScanContext(ctx, ctxArgs)
 
+	// Flow templates require OnResult callback to be set
+	// We use this to collect results from flow executions
+	var flowResults []*output.ResultEvent
+	scanCtx.OnResult = func(event *output.InternalWrappedEvent) {
+		if event != nil && event.Results != nil {
+			flowResults = append(flowResults, event.Results...)
+		}
+	}
+
 	// Execute template and get results
+	gologger.Info().Msgf("[%s] Executing template...", template.ID)
 	results, err := template.Executer.ExecuteWithResults(scanCtx)
 	if err != nil {
+		gologger.Error().Msgf("[%s] Execution error: %v", template.ID, err)
 		return fmt.Errorf("template execution failed: %w", err)
 	}
 
-	// Process each result
-	for _, result := range results {
-		ne.processResult(result)
+	// Merge results from callback (flow) and return value (simple)
+	if len(flowResults) > 0 {
+		results = append(results, flowResults...)
 	}
 
-	// Mark template as completed
-	ne.stateManager.MarkCompleted([]string{templatePath})
+	// Log results count
+	gologger.Debug().Msgf("[%s] Got %d results", template.ID, len(results))
+
+	// Process results
+	if len(results) == 0 {
+		// Template executed but no results (didn't match)
+		// We treat this as "Blocked" or "Not Vulnerable" for WAF testing
+		// Since we can't get the actual response status without a match, 
+		// we log it as a special status.
+		gologger.Debug().Msgf("[%s] No results found, creating synthetic blocked result", template.ID)
+		
+		syntheticResult := &output.ResultEvent{
+			TemplateID: template.ID,
+			Info:       template.Info,
+			Matched:    ne.target,
+			Timestamp:  time.Now(),
+			// We assume blocked if not bypassed/matched
+			Metadata: map[string]interface{}{
+				"status_code":      403, // Assume blocked
+				"synthetic_result": true,
+			},
+		}
+		ne.processResult(syntheticResult)
+	} else {
+		// Process each result
+		for i, result := range results {
+			gologger.Debug().Msgf("[%s] Processing result %d/%d", template.ID, i+1, len(results))
+			ne.processResult(result)
+		}
+	}
 
 	return nil
 }
@@ -252,3 +310,51 @@ func (ne *NucleiExecutor) extractPayload(result *output.ResultEvent) string {
 func (ne *NucleiExecutor) Close() error {
 	return nil
 }
+
+// forceTemplateMatch overrides template matchers to ensure we get results for every request
+// regardless of whether vulnerability signature matches. This allows WAF testing on non-vulnerable targets.
+func (ne *NucleiExecutor) forceTemplateMatch(template *templates.Template) {
+	// Create a catch-all matcher (DSL: true)
+	catchAllMatcher := &matchers.Matcher{
+		Type: matchers.MatcherTypeHolder{MatcherType: matchers.DSLMatcher},
+		DSL:  []string{"true"},
+		Name: "waf-test-catch-all",
+	}
+
+	// Create operators with this matcher
+	catchAllOperators := &operators.Operators{
+		Matchers: []*matchers.Matcher{catchAllMatcher},
+	}
+
+	// Inject into HTTP requests
+	for _, req := range template.RequestsHTTP {
+		req.CompiledOperators = catchAllOperators
+		// We can also clear req.Matchers if needed, but CompiledOperators is what Executer uses
+	}
+}
+
+// VoidWriter implements output.Writer but does nothing
+// This is used to prevent nil pointer panics when Nuclei logging is enabled
+type VoidWriter struct{}
+
+func (w *VoidWriter) Close() {}
+func (w *VoidWriter) Colorizer() aurora.Aurora { return nil }
+func (w *VoidWriter) Write(*output.ResultEvent) error { return nil }
+func (w *VoidWriter) WriteFailure(*output.InternalWrappedEvent) error { return nil }
+func (w *VoidWriter) Request(templateID, url, requestType string, err error) {}
+func (w *VoidWriter) RequestStatsLog(statusCode, response string) {}
+func (w *VoidWriter) WriteStoreDebugData(host, templateID, eventType string, data string) {}
+func (w *VoidWriter) ResultCount() int { return 0 }
+
+// VoidProgress implements progress.Progress interface but does nothing
+// This is used to prevent nil pointer panics when Nuclei execution updates progress
+type VoidProgress struct{}
+
+func (p *VoidProgress) Stop() {}
+func (p *VoidProgress) Init(hostCount int64, rulesCount int, requestCount int64) {}
+func (p *VoidProgress) AddToTotal(delta int64) {}
+func (p *VoidProgress) IncrementRequests() {}
+func (p *VoidProgress) SetRequests(count uint64) {}
+func (p *VoidProgress) IncrementMatched() {}
+func (p *VoidProgress) IncrementErrorsBy(count int64) {}
+func (p *VoidProgress) IncrementFailedRequestsBy(count int64) {}

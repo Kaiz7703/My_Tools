@@ -45,6 +45,22 @@ func (d *WAFBypassDetector) CheckBypass(resp *http.Response) bool {
 	return strings.EqualFold(strings.TrimSpace(headerValue), d.PassedValue)
 }
 
+// IsBypassed checks bypass status using raw values
+func (d *WAFBypassDetector) IsBypassed(statusCode int, wafStatus string) bool {
+	// Check HTTP status code
+	if statusCode != http.StatusOK {
+		return false
+	}
+
+	// Check X-WAF-Status header
+	if wafStatus == "" {
+		return false
+	}
+
+	// Case-insensitive comparison
+	return strings.EqualFold(strings.TrimSpace(wafStatus), d.PassedValue)
+}
+
 // GetBypassStatus returns a human-readable status string
 func (d *WAFBypassDetector) GetBypassStatus(resp *http.Response) string {
 	if d.CheckBypass(resp) {
