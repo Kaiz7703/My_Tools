@@ -82,7 +82,7 @@ A bypass is detected when the response has HTTP 200 status AND X-WAF-Status: Pas
 	flagSet.CreateGroup("execution", "Execution",
 		flagSet.IntVarP(&config.BatchSize, "batch-size", "bs", 10, "number of templates to execute per batch"),
 		flagSet.BoolVarP(&config.ResetState, "reset", "r", false, "reset state and start fresh (deletes state file)"),
-		flagSet.StringVarP(&config.DetectionMode, "mode", "m", "strict", "detection mode: strict (200+header) or header (header only)"),
+		flagSet.StringVarP(&config.DetectionMode, "mode", "m", "strict", "detection mode: strict (200+header), header (header only), or status-only (200 only)"),
 	)
 
 	// Debug flags

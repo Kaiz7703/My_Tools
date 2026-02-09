@@ -61,7 +61,26 @@ func (d *WAFBypassDetector) CheckBypass(resp *http.Response) bool {
 }
 
 // IsBypassed checks bypass status using raw values
+// Modes:
+// - "strict" (default): Requires both HTTP 200 AND X-WAF-Status: Passed
+// - "header": Only requires X-WAF-Status: Passed (ignores status code)
+// - "status-only": Only requires HTTP 200 (ignores header)
 func (d *WAFBypassDetector) IsBypassed(statusCode int, wafStatus string) bool {
+	// Mode: status-only - just check status code
+	if d.Mode == "status-only" || d.Mode == "status" {
+		return statusCode == http.StatusOK
+	}
+	
+	// Mode: header - just check header
+	if d.Mode == "header" {
+		if wafStatus == "" {
+			return false
+		}
+		headerPassed := strings.EqualFold(strings.TrimSpace(wafStatus), d.PassedValue)
+		return headerPassed
+	}
+	
+	// Mode: strict (default) - check both
 	// Check X-WAF-Status header
 	if wafStatus == "" {
 		return false
@@ -72,12 +91,7 @@ func (d *WAFBypassDetector) IsBypassed(statusCode int, wafStatus string) bool {
 		return false
 	}
 
-	// If mode is header-only, we are done
-	if d.Mode == "header" {
-		return true
-	}
-
-	// Default/Strict: Check HTTP status code
+	// Also check HTTP status code
 	if statusCode != http.StatusOK {
 		return false
 	}
