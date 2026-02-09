@@ -324,29 +324,25 @@ func (ne *NucleiExecutor) processResult(result *output.ResultEvent, flowIndex, t
 	}
 }
 
-// extractStatusCode extracts HTTP status code from result metadata
+// extractStatusCode extracts HTTP status code from result
+// NOTE: ResultEvent.Metadata does NOT contain status_code!
+// We must parse from result.Response string.
 func (ne *NucleiExecutor) extractStatusCode(result *output.ResultEvent) int {
-	if result.Metadata == nil { return 0 }
-	
-	for _, key := range []string{"status_code", "status-code", "response_code"} {
-		if val, ok := result.Metadata[key]; ok {
-			switch v := val.(type) {
-			case int: return v
-			case float64: return int(v)
-			case string:
-				var i int
-				fmt.Sscanf(v, "%d", &i)
-				return i
+	// Parse from Response string (ONLY RELIABLE METHOD)
+	if result.Response != "" {
+		lines := strings.Split(result.Response, "\n")
+		if len(lines) > 0 {
+			firstLine := strings.TrimSpace(strings.TrimRight(lines[0], "\r"))
+			if strings.HasPrefix(firstLine, "HTTP/") {
+				parts := strings.Fields(firstLine)
+				if len(parts) >= 2 {
+					var code int
+					n, err := fmt.Sscanf(parts[1], "%d", &code)
+					if err == nil && n == 1 && code > 0 {
+						return code
+					}
+				}
 			}
-		}
-	}
-
-	if result.Response != "" && strings.Contains(result.Response, "HTTP/") {
-		parts := strings.Fields(result.Response)
-		if len(parts) >= 2 {
-			var code int
-			fmt.Sscanf(parts[1], "%d", &code)
-			return code
 		}
 	}
 	return 0
