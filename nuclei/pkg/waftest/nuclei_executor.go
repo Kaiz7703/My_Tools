@@ -146,9 +146,16 @@ func (ne *NucleiExecutor) Execute(ctx context.Context, templatePath string) erro
 
 	// Callback for Flow results (deprecated if we flatten, but good for backup)
 	var flowResults []*output.ResultEvent
+	var internalEvents []*output.InternalWrappedEvent // Store InternalEvents for status code extraction
+	
 	scanCtx.OnResult = func(event *output.InternalWrappedEvent) {
-		if event != nil && event.Results != nil {
-			flowResults = append(flowResults, event.Results...)
+		if event != nil {
+			// Store the InternalEvent for later processing
+			internalEvents = append(internalEvents, event)
+			
+			if event.Results != nil {
+				flowResults = append(flowResults, event.Results...)
+			}
 		}
 	}
 
@@ -173,7 +180,16 @@ func (ne *NucleiExecutor) Execute(ctx context.Context, templatePath string) erro
 	for _, r := range uniqueResults { finalResults = append(finalResults, r) }
 	results = finalResults
 
-	gologger.Debug().Msgf("[%s] Got %d unique results", template.ID, len(results))
+	gologger.Debug().Msgf("[%s] Got %d unique results, %d internal events", template.ID, len(results), len(internalEvents))
+	
+	// Create a map to enrich ResultEvents with InternalEvent data
+	enrichmentMap := make(map[string]map[string]interface{})
+	for _, ie := range internalEvents {
+		if ie.InternalEvent != nil {
+			key := fmt.Sprintf("%s|%s", template.ID, ie.InternalEvent["matched"])
+			enrichmentMap[key] = ie.InternalEvent
+		}
+	}
 
 	// Processing
 	if len(results) == 0 {
@@ -185,12 +201,17 @@ func (ne *NucleiExecutor) Execute(ctx context.Context, templatePath string) erro
 			Timestamp:  time.Now(),
 			Metadata: map[string]interface{}{"status_code": 403, "synthetic_result": true},
 		}
-		ne.processResult(syntheticResult, 1, 1)
+		ne.processResult(syntheticResult, 1, 1, nil)
 	} else {
 		total := len(results)
 		for i, result := range results {
 			gologger.Debug().Msgf("[%s] Processing result %d/%d", template.ID, i+1, total)
-			ne.processResult(result, i+1, total)
+			
+			// Try to find matching InternalEvent for enrichment
+			key := fmt.Sprintf("%s|%s", result.TemplateID, result.Matched)
+			internalEvent := enrichmentMap[key]
+			
+			ne.processResult(result, i+1, total, internalEvent)
 		}
 	}
 
@@ -256,9 +277,9 @@ func (ne *NucleiExecutor) preprocessTemplate(data []byte) ([]byte, error) {
 }
 
 // processResult processes a single Nuclei result event
-func (ne *NucleiExecutor) processResult(result *output.ResultEvent, flowIndex, totalFlow int) {
-	statusCode := ne.extractStatusCode(result)
-	wafStatus := ne.extractWAFStatus(result)
+func (ne *NucleiExecutor) processResult(result *output.ResultEvent, flowIndex, totalFlow int, internalEvent map[string]interface{}) {
+	statusCode := ne.extractStatusCode(result, internalEvent)
+	wafStatus := ne.extractWAFStatus(result, internalEvent)
 	bypassed := ne.detector.IsBypassed(statusCode, wafStatus)
 
 	ne.stateManager.RecordResult(bypassed)
@@ -326,30 +347,90 @@ func (ne *NucleiExecutor) processResult(result *output.ResultEvent, flowIndex, t
 }
 
 // extractStatusCode extracts HTTP status code from result
-// NOTE: ResultEvent.Metadata does NOT contain status_code!
-// We must parse from result.Response string.
-func (ne *NucleiExecutor) extractStatusCode(result *output.ResultEvent) int {
-	// Parse from Response string (ONLY RELIABLE METHOD)
-	if result.Response != "" {
-		lines := strings.Split(result.Response, "\n")
-		if len(lines) > 0 {
-			firstLine := strings.TrimSpace(strings.TrimRight(lines[0], "\r"))
-			if strings.HasPrefix(firstLine, "HTTP/") {
-				parts := strings.Fields(firstLine)
-				if len(parts) >= 2 {
-					var code int
-					n, err := fmt.Sscanf(parts[1], "%d", &code)
-					if err == nil && n == 1 && code > 0 {
-						return code
-					}
-				}
+// Priority: InternalEvent["status_code"] > result.Response parsing
+func (ne *NucleiExecutor) extractStatusCode(result *output.ResultEvent, internalEvent map[string]interface{}) int {
+	// Method 1: Extract from InternalEvent (MOST RELIABLE!)
+	if internalEvent != nil {
+		if statusCode, ok := internalEvent["status_code"]; ok {
+			switch v := statusCode.(type) {
+			case int:
+				gologger.Info().Msgf("[%s] ✓ Extracted status code from InternalEvent: %d", result.TemplateID, v)
+				return v
+			case float64:
+				code := int(v)
+				gologger.Info().Msgf("[%s] ✓ Extracted status code from InternalEvent (float64): %d", result.TemplateID, code)
+				return code
 			}
 		}
+		gologger.Debug().Msgf("[%s] InternalEvent keys: %v", result.TemplateID, getKeys(internalEvent))
 	}
+	
+	// Method 2: Parse from result.Response string (fallback)
+	gologger.Debug().Msgf("[%s] Response length: %d bytes", result.TemplateID, len(result.Response))
+	if result.Response == "" {
+		gologger.Warning().Msgf("[%s] Response field is EMPTY! Cannot extract status code.", result.TemplateID)
+		gologger.Debug().Msgf("[%s] Request: %d bytes", result.TemplateID, len(result.Request))
+		return 0
+	}
+	
+	// Show first 200 chars of response for debugging
+	preview := result.Response
+	if len(preview) > 200 {
+		preview = preview[:200] + "..."
+	}
+	gologger.Debug().Msgf("[%s] Response preview: %s", result.TemplateID, preview)
+	
+	// Parse from Response string
+	lines := strings.Split(result.Response, "\n")
+	if len(lines) > 0 {
+		firstLine := strings.TrimSpace(strings.TrimRight(lines[0], "\r"))
+		gologger.Debug().Msgf("[%s] First line: '%s'", result.TemplateID, firstLine)
+		
+		if strings.HasPrefix(firstLine, "HTTP/") {
+			parts := strings.Fields(firstLine)
+			gologger.Debug().Msgf("[%s] Parsed parts: %v", result.TemplateID, parts)
+			
+			if len(parts) >= 2 {
+				var code int
+				n, err := fmt.Sscanf(parts[1], "%d", &code)
+				if err == nil && n == 1 && code > 0 {
+					gologger.Info().Msgf("[%s] ✓ Extracted status code from Response: %d", result.TemplateID, code)
+					return code
+				} else {
+					gologger.Warning().Msgf("[%s] Failed to parse status code from '%s': err=%v, n=%d", result.TemplateID, parts[1], err, n)
+				}
+			}
+		} else {
+			gologger.Warning().Msgf("[%s] First line doesn't start with 'HTTP/': %s", result.TemplateID, firstLine)
+		}
+	}
+	
+	gologger.Warning().Msgf("[%s] ✗ Returning status code 0", result.TemplateID)
 	return 0
 }
 
-func (ne *NucleiExecutor) extractWAFStatus(result *output.ResultEvent) string {
+// Helper function to get keys from map
+func getKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+func (ne *NucleiExecutor) extractWAFStatus(result *output.ResultEvent, internalEvent map[string]interface{}) string {
+	// Method 1: Extract from InternalEvent (headers are stored here)
+	if internalEvent != nil {
+		// Try x_waf_status directly
+		if val, ok := internalEvent["x_waf_status"]; ok {
+			if s, ok := val.(string); ok && s != "" {
+				gologger.Debug().Msgf("[%s] Found WAF status in InternalEvent: %s", result.TemplateID, s)
+				return s
+			}
+		}
+	}
+	
+	// Method 2: Try ResultEvent.Metadata (unlikely but check)
 	if result.Metadata == nil { 
 		return "" 
 	}
