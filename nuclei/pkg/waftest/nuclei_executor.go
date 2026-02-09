@@ -274,6 +274,22 @@ func (ne *NucleiExecutor) processResult(result *output.ResultEvent, flowIndex, t
 	if statusCode == 0 {
 		gologger.Debug().Msgf("[%s] Status 0. Meta: %v", result.TemplateID, result.Metadata)
 	}
+	
+	// Debug: Print all response headers if available
+	gologger.Debug().Msgf("[%s] Status Code: %d, WAF Header: '%s'", result.TemplateID, statusCode, wafStatus)
+	
+	// Try to extract and print all headers for debugging
+	if result.Metadata != nil {
+		if h, ok := result.Metadata["response_headers"].(http.Header); ok {
+			gologger.Debug().Msgf("[%s] Response Headers: %v", result.TemplateID, h)
+		}
+		if h, ok := result.Metadata["all_headers"].(http.Header); ok {
+			gologger.Debug().Msgf("[%s] All Headers: %v", result.TemplateID, h)
+		}
+		if headers, ok := result.Metadata["headers"].(map[string]interface{}); ok {
+			gologger.Debug().Msgf("[%s] Headers Map: %v", result.TemplateID, headers)
+		}
+	}
 
 	severity := "unknown"
 	if result.Info.SeverityHolder.Severity != 0 {
@@ -337,10 +353,49 @@ func (ne *NucleiExecutor) extractStatusCode(result *output.ResultEvent) int {
 }
 
 func (ne *NucleiExecutor) extractWAFStatus(result *output.ResultEvent) string {
-	if result.Metadata == nil { return "" }
-	if s, ok := result.Metadata["waf_status"].(string); ok { return s }
-	if s, ok := result.Metadata["x-waf-status"].(string); ok { return s }
-	if h, ok := result.Metadata["response_headers"].(http.Header); ok { return h.Get("X-WAF-Status") }
+	if result.Metadata == nil { 
+		return "" 
+	}
+	
+	// Nuclei converts headers to lowercase and replaces "-" with "_"
+	// So "X-WAF-Status" becomes "x_waf_status"
+	
+	// Method 1: Direct key (Nuclei format)
+	if s, ok := result.Metadata["x_waf_status"].(string); ok && s != "" { 
+		gologger.Debug().Msgf("[%s] Found WAF status: %s", result.TemplateID, s)
+		return s 
+	}
+	
+	// Method 2: Try alternative formats
+	if s, ok := result.Metadata["waf_status"].(string); ok && s != "" { 
+		return s 
+	}
+	
+	// Method 3: response_headers as http.Header (unlikely but check anyway)
+	if h, ok := result.Metadata["response_headers"].(http.Header); ok { 
+		if val := h.Get("X-WAF-Status"); val != "" {
+			return val
+		}
+	}
+	
+	// Method 4: Scan all metadata keys case-insensitively
+	for key, value := range result.Metadata {
+		keyLower := strings.ToLower(strings.ReplaceAll(key, "-", "_"))
+		if keyLower == "x_waf_status" || keyLower == "waf_status" {
+			if s, ok := value.(string); ok && s != "" {
+				gologger.Debug().Msgf("[%s] Found WAF status via key scan: %s = %s", result.TemplateID, key, s)
+				return s
+			}
+		}
+	}
+	
+	// Debug: Log all metadata keys if we couldn't find the header
+	keys := make([]string, 0, len(result.Metadata))
+	for k := range result.Metadata {
+		keys = append(keys, k)
+	}
+	gologger.Debug().Msgf("[%s] WAF header not found. Available metadata keys: %v", result.TemplateID, keys)
+	
 	return ""
 }
 
