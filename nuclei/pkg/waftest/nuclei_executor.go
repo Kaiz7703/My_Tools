@@ -58,6 +58,7 @@ func NewNucleiExecutor(target string, detector *WAFBypassDetector,
 		BulkSize:        1,
 		TemplateThreads: 1,
 		Logger:          gologger.DefaultLogger,
+		StoreResponse:   true, // CRITICAL: Enable response storage for status code extraction
 	}
 
 	// Create catalog
