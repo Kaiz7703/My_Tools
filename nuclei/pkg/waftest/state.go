@@ -22,8 +22,22 @@ type ExecutionState struct {
 	LastBatchIndex     int       `json:"last_batch_index"`
 	TotalTemplates     int       `json:"total_templates"`
 	LastUpdated        time.Time `json:"last_updated"`
+	
+	// Request-level stats
 	BypassedCount      int       `json:"bypassed_count"`
 	BlockedCount       int       `json:"blocked_count"`
+	
+	// Template-level stats
+	BypassedTemplates  map[string]bool `json:"bypassed_templates"`  // Templates with ALL requests bypassed
+	BlockedTemplates   map[string]bool `json:"blocked_templates"`   // Templates with ANY request blocked
+	TemplateRequests   map[string]*TemplateStats `json:"template_requests"` // Per-template request stats
+}
+
+// TemplateStats tracks statistics for a single template
+type TemplateStats struct {
+	TotalRequests    int `json:"total_requests"`
+	BypassedRequests int `json:"bypassed_requests"`
+	BlockedRequests  int `json:"blocked_requests"`
 }
 
 // NewStateManager creates a new state manager
@@ -37,6 +51,9 @@ func NewStateManager(filePath string) *StateManager {
 			LastUpdated:        time.Now(),
 			BypassedCount:      0,
 			BlockedCount:       0,
+			BypassedTemplates:  make(map[string]bool),
+			BlockedTemplates:   make(map[string]bool),
+			TemplateRequests:   make(map[string]*TemplateStats),
 		},
 	}
 }
@@ -129,11 +146,40 @@ func (sm *StateManager) MarkCompleted(templates []string) {
 }
 
 // RecordResult records the result of a template execution
-func (sm *StateManager) RecordResult(bypassed bool) {
+func (sm *StateManager) RecordResult(templateID string, bypassed bool) {
+	// Request-level stats
 	if bypassed {
 		sm.state.BypassedCount++
 	} else {
 		sm.state.BlockedCount++
+	}
+	
+	// Template-level stats
+	if sm.state.TemplateRequests[templateID] == nil {
+		sm.state.TemplateRequests[templateID] = &TemplateStats{}
+	}
+	
+	stats := sm.state.TemplateRequests[templateID]
+	stats.TotalRequests++
+	if bypassed {
+		stats.BypassedRequests++
+	} else {
+		stats.BlockedRequests++
+	}
+}
+
+// FinalizeTemplate marks a template as complete and determines if it's bypassed or blocked
+func (sm *StateManager) FinalizeTemplate(templateID string) {
+	stats := sm.state.TemplateRequests[templateID]
+	if stats == nil {
+		return
+	}
+	
+	// Template is bypassed ONLY if ALL requests bypassed
+	if stats.BypassedRequests > 0 && stats.BlockedRequests == 0 {
+		sm.state.BypassedTemplates[templateID] = true
+	} else if stats.BlockedRequests > 0 {
+		sm.state.BlockedTemplates[templateID] = true
 	}
 }
 

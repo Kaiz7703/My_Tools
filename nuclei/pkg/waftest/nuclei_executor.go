@@ -213,6 +213,9 @@ func (ne *NucleiExecutor) Execute(ctx context.Context, templatePath string) erro
 			
 			ne.processResult(result, i+1, total, internalEvent)
 		}
+		
+		// Finalize template stats after processing all results
+		ne.stateManager.FinalizeTemplate(template.ID)
 	}
 
 	return nil
@@ -282,7 +285,7 @@ func (ne *NucleiExecutor) processResult(result *output.ResultEvent, flowIndex, t
 	wafStatus := ne.extractWAFStatus(result, internalEvent)
 	bypassed := ne.detector.IsBypassed(statusCode, wafStatus)
 
-	ne.stateManager.RecordResult(bypassed)
+	ne.stateManager.RecordResult(result.TemplateID, bypassed)
 
 	status := "Blocked"
 	if bypassed {

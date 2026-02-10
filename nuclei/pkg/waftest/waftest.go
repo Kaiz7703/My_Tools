@@ -172,23 +172,39 @@ func (wt *WAFTester) PrintSummary() {
 
 // PrintFinalSummary prints the final summary report
 func (wt *WAFTester) PrintFinalSummary() {
-	completed, _, bypassed, blocked := wt.stateManager.GetProgress()
-	rate := wt.stateManager.GetBypassRate()
+	// Request-level stats
+	completed, _, bypassedReqs, blockedReqs := wt.stateManager.GetProgress()
+	reqRate := wt.stateManager.GetBypassRate()
+	totalReqs := bypassedReqs + blockedReqs
+	
+	// Template-level stats
+	bypassedTmpls, blockedTmpls, _ := wt.stateManager.GetTemplateStats()
+	tmplRate := wt.stateManager.GetTemplateBypassRate()
+	totalTmpls := bypassedTmpls + blockedTmpls
 
 	fmt.Println()
-	fmt.Println("╔════════════════════════════════════════════════════════════╗")
-	fmt.Println("║              WAF Testing Summary Report                    ║")
-	fmt.Println("╠════════════════════════════════════════════════════════════╣")
-	fmt.Printf("║ Total Templates Tested:     %-30d ║\n", completed)
-	fmt.Printf("║ Successful Bypasses:         %-30d ║\n", bypassed)
-	fmt.Printf("║ Blocked by WAF:              %-30d ║\n", blocked)
-	fmt.Printf("║ Bypass Rate:                 %-29.1f%% ║\n", rate)
-	fmt.Println("║                                                            ║")
+	fmt.Println("╔══════════════════════════════════════════════════════════════╗")
+	fmt.Println("║              WAF Testing Summary Report                      ║")
+	fmt.Println("╠══════════════════════════════════════════════════════════════╣")
+	fmt.Printf("║ Total Templates Tested:     %-33d║\n", completed)
+	fmt.Println("║                                                              ║")
+	fmt.Println("║ REQUEST-LEVEL STATISTICS:                                    ║")
+	fmt.Printf("║   • Bypassed Requests:        %-31d║\n", bypassedReqs)
+	fmt.Printf("║   • Blocked Requests:         %-31d║\n", blockedReqs)
+	fmt.Printf("║   • Total Requests:           %-31d║\n", totalReqs)
+	fmt.Printf("║   • Request Bypass Rate:      %-30.1f%%║\n", reqRate)
+	fmt.Println("║                                                              ║")
+	fmt.Println("║ TEMPLATE-LEVEL STATISTICS:                                   ║")
+	fmt.Printf("║   • Bypassed Templates:       %-31d║\n", bypassedTmpls)
+	fmt.Printf("║   • Blocked Templates:        %-31d║\n", blockedTmpls)
+	fmt.Printf("║   • Total Templates:          %-31d║\n", totalTmpls)
+	fmt.Printf("║   • Template Bypass Rate:     %-30.1f%%║\n", tmplRate)
+	fmt.Println("║                                                              ║")
 	
 	compPath, bypassPath := wt.csvWriter.GetPaths()
-	fmt.Printf("║ Comprehensive CSV:           %-30s ║\n", filepath.Base(compPath))
-	fmt.Printf("║ Bypassed CSV:                %-30s ║\n", filepath.Base(bypassPath))
-	fmt.Println("╚════════════════════════════════════════════════════════════╝")
+	fmt.Printf("║ Comprehensive CSV:            %-31s║\n", filepath.Base(compPath))
+	fmt.Printf("║ Bypassed CSV:                 %-31s║\n", filepath.Base(bypassPath))
+	fmt.Println("╚══════════════════════════════════════════════════════════════╝")
 	fmt.Println()
 }
 

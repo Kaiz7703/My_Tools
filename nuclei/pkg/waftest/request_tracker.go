@@ -84,7 +84,7 @@ func (rt *RequestTracker) TrackRequest(
 	}
 
 	// Record in state
-	rt.stateManager.RecordResult(bypassed)
+	rt.stateManager.RecordResult(templateID, bypassed)
 
 	// Log if bypassed
 	if bypassed {

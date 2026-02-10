@@ -170,7 +170,7 @@ func (te *TemplateExecutor) executeHTTPRequest(ctx context.Context, tmpl *Simple
 	bypassed := te.detector.CheckBypass(resp)
 
 	// Update state
-	te.stateManager.RecordResult(bypassed)
+	te.stateManager.RecordResult(tmpl.ID, bypassed)
 
 	// Create WAF result for CSV
 	status := "Blocked"
