@@ -26,19 +26,20 @@ import (
 
 // NucleiExecutor executes templates using real Nuclei engine
 type NucleiExecutor struct {
-	target       string
-	options      *types.Options
-	executorOpts *protocols.ExecutorOptions
-	catalog      catalog.Catalog
-	parser       *templates.Parser
-	detector     *WAFBypassDetector
-	csvWriter    *output.CSVWriter
-	stateManager *StateManager
+	target          string
+	options         *types.Options
+	executorOpts    *protocols.ExecutorOptions
+	catalog         catalog.Catalog
+	parser          *templates.Parser
+	detector        *WAFBypassDetector
+	csvWriter       *output.CSVWriter
+	stateManager    *StateManager
+	detailedVerbose bool // Print full request/response details
 }
 
 // NewNucleiExecutor creates a new Nuclei-powered executor
 func NewNucleiExecutor(target string, detector *WAFBypassDetector,
-	csvWriter *output.CSVWriter, stateManager *StateManager) (*NucleiExecutor, error) {
+	csvWriter *output.CSVWriter, stateManager *StateManager, detailedVerbose bool) (*NucleiExecutor, error) {
 	if target == "" {
 		return nil, fmt.Errorf("target URL is required")
 	}
@@ -86,14 +87,15 @@ func NewNucleiExecutor(target string, detector *WAFBypassDetector,
 	}
 
 	return &NucleiExecutor{
-		target:       target,
-		options:      options,
-		executorOpts: executorOpts,
-		catalog:      catalogInstance,
-		parser:       parser,
-		detector:     detector,
-		csvWriter:    csvWriter,
-		stateManager: stateManager,
+		target:          target,
+		options:         options,
+		executorOpts:    executorOpts,
+		catalog:         catalogInstance,
+		parser:          parser,
+		detector:        detector,
+		csvWriter:       csvWriter,
+		stateManager:    stateManager,
+		detailedVerbose: detailedVerbose,
 	}, nil
 }
 
@@ -345,6 +347,52 @@ func (ne *NucleiExecutor) processResult(result *output.ResultEvent, flowIndex, t
 	
 	// Debug: Print all response headers if available
 	gologger.Debug().Msgf("[%s] Status Code: %d, WAF Header: '%s'", result.TemplateID, statusCode, wafStatus)
+	
+	// Detailed verbose mode: Print full request/response
+	if ne.detailedVerbose {
+		fmt.Println("\n" + strings.Repeat("=", 70))
+		fmt.Printf("TEMPLATE: %s | STATUS: %s\n", result.TemplateID, status)
+		fmt.Println(strings.Repeat("=", 70))
+		
+		// Print request details
+		if result.Request != "" {
+			fmt.Println("\n📤 REQUEST:")
+			fmt.Println(strings.Repeat("-", 70))
+			fmt.Println(result.Request)
+		}
+		
+		// Print response details
+		if result.Response != "" {
+			fmt.Println("\n📥 RESPONSE:")
+			fmt.Println(strings.Repeat("-", 70))
+			fmt.Println(result.Response)
+		} else if internalEvent != nil {
+			// Try to get response from InternalEvent
+			if respBody, ok := internalEvent["body"].(string); ok && respBody != "" {
+				fmt.Println("\n📥 RESPONSE BODY:")
+				fmt.Println(strings.Repeat("-", 70))
+				fmt.Println(respBody)
+			}
+			if respHeaders, ok := internalEvent["response_headers"].(map[string]interface{}); ok {
+				fmt.Println("\n📋 RESPONSE HEADERS:")
+				fmt.Println(strings.Repeat("-", 70))
+				for k, v := range respHeaders {
+					fmt.Printf("%s: %v\n", k, v)
+				}
+			}
+		}
+		
+		// Print metadata
+		if len(result.Metadata) > 0 {
+			fmt.Println("\n📊 METADATA:")
+			fmt.Println(strings.Repeat("-", 70))
+			for k, v := range result.Metadata {
+				fmt.Printf("%s: %v\n", k, v)
+			}
+		}
+		
+		fmt.Println(strings.Repeat("=", 70) + "\n")
+	}
 	
 	// Try to extract and print all headers for debugging
 	if result.Metadata != nil {

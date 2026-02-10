@@ -89,6 +89,7 @@ A bypass is detected when the response has HTTP 200 status AND X-WAF-Status: Pas
 	// Debug flags
 	flagSet.CreateGroup("debug", "Debug",
 		flagSet.BoolVarP(&config.Verbose, "verbose", "v", false, "enable verbose output"),
+		flagSet.BoolVarP(&config.DetailedVerbose, "detailed-verbose", "vv", false, "enable detailed verbose (prints full request/response)"),
 		flagSet.BoolVarP(&config.Silent, "silent", "s", false, "silent mode (only show summary)"),
 	)
 

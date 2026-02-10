@@ -14,30 +14,32 @@ import (
 
 // WAFTester orchestrates WAF testing with progressive execution
 type WAFTester struct {
-	templateDir   string
-	target        string
-	batchSize     int
-	stateFile     string
-	csvOutput     string
-	csvBypassed   string
-	stateManager  *StateManager
-	csvWriter     *output.CSVWriter
-	detector      *WAFBypassDetector
+	templateDir     string
+	target          string
+	batchSize       int
+	stateFile       string
+	csvOutput       string
+	csvBypassed     string
+	stateManager    *StateManager
+	csvWriter       *output.CSVWriter
+	detector        *WAFBypassDetector
+	detailedVerbose bool
 }
 
 // Config holds configuration for WAF testing
 type Config struct {
-	TemplateDir   string
-	BatchSize     int
-	StateFile     string
-	CSVOutput     string
-	CSVBypassed   string
-	Target        string
-	Verbose       bool
-	Silent        bool
-	ResetState    bool
-	DetectionMode string // strict, header, or status-only
-	AllTemplates  bool   // -a flag: run all templates in one go
+	TemplateDir     string
+	BatchSize       int
+	StateFile       string
+	CSVOutput       string
+	CSVBypassed     string
+	Target          string
+	Verbose         bool
+	Silent          bool
+	ResetState      bool
+	DetectionMode   string // strict, header, or status-only
+	AllTemplates    bool   // -a flag: run all templates in one go
+	DetailedVerbose bool   // -vv flag: print full request/response details
 }
 
 // NewWAFTester creates a new WAF tester
@@ -78,15 +80,16 @@ func NewWAFTester(config *Config) (*WAFTester, error) {
 	detector := NewWAFBypassDetector(config.DetectionMode)
 
 	return &WAFTester{
-		templateDir:  config.TemplateDir,
-		target:       config.Target,
-		batchSize:    config.BatchSize,
-		stateFile:    config.StateFile,
-		csvOutput:    config.CSVOutput,
-		csvBypassed:  config.CSVBypassed,
-		stateManager: stateManager,
-		csvWriter:    csvWriter,
-		detector:     detector,
+		templateDir:     config.TemplateDir,
+		target:          config.Target,
+		batchSize:       config.BatchSize,
+		stateFile:       config.StateFile,
+		csvOutput:       config.CSVOutput,
+		csvBypassed:     config.CSVBypassed,
+		stateManager:    stateManager,
+		csvWriter:       csvWriter,
+		detector:        detector,
+		detailedVerbose: config.DetailedVerbose,
 	}, nil
 }
 
@@ -130,6 +133,7 @@ func (wt *WAFTester) ExecuteBatch(ctx context.Context, templates []string) error
 		wt.detector,
 		wt.csvWriter,
 		wt.stateManager,
+		wt.detailedVerbose, // Pass detailed verbose flag from WAFTester
 	)
 	if err != nil {
 		return errors.Wrap(err, "failed to create Nuclei executor")
