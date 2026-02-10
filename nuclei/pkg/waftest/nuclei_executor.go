@@ -176,6 +176,11 @@ func (ne *NucleiExecutor) Execute(ctx context.Context, templatePath string) (ret
 	// Create scan context
 	metaInput := contextargs.NewMetaInput()
 	metaInput.Input = ne.target
+	
+	// Debug: Log what we're passing to template
+	gologger.Debug().Msgf("[%s] Setting target for template: %s", template.ID, ne.target)
+	gologger.Debug().Msgf("[%s] Template will receive {{Hostname}} = %s", template.ID, ne.target)
+	
 	ctxArgs := contextargs.New(ctx)
 	ctxArgs.MetaInput = metaInput
 	scanCtx := scan.NewScanContext(ctx, ctxArgs)
