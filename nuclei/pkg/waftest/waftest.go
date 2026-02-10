@@ -27,16 +27,17 @@ type WAFTester struct {
 
 // Config holds configuration for WAF testing
 type Config struct {
-	TemplateDir string
-	BatchSize   int
-	StateFile   string
-	CSVOutput   string
-	CSVBypassed string
-	Target      string
-	Verbose     bool
-	Silent      bool
-	ResetState  bool
-	DetectionMode string // strict or header
+	TemplateDir   string
+	BatchSize     int
+	StateFile     string
+	CSVOutput     string
+	CSVBypassed   string
+	Target        string
+	Verbose       bool
+	Silent        bool
+	ResetState    bool
+	DetectionMode string // strict, header, or status-only
+	AllTemplates  bool   // -a flag: run all templates in one go
 }
 
 // NewWAFTester creates a new WAF tester
@@ -44,8 +45,15 @@ func NewWAFTester(config *Config) (*WAFTester, error) {
 	if config.TemplateDir == "" {
 		return nil, errors.New("template directory is required")
 	}
+	
+	// Handle -a flag: override batch size to unlimited
+	if config.AllTemplates {
+		config.BatchSize = 999999
+		gologger.Info().Msg("All-templates mode enabled: running all templates in one execution")
+	}
+	
 	if config.BatchSize <= 0 {
-		config.BatchSize = 10 // default batch size
+		config.BatchSize = 999999 // 0 or negative = unlimited (run all templates)
 	}
 	if config.StateFile == "" {
 		config.StateFile = "waf_test_state.json"
@@ -181,6 +189,9 @@ func (wt *WAFTester) PrintFinalSummary() {
 	bypassedTmpls, blockedTmpls, _ := wt.stateManager.GetTemplateStats()
 	tmplRate := wt.stateManager.GetTemplateBypassRate()
 	totalTmpls := bypassedTmpls + blockedTmpls
+	
+	// Error stats
+	skipped, failed := wt.stateManager.GetErrorStats()
 
 	fmt.Println()
 	fmt.Println("╔══════════════════════════════════════════════════════════════╗")
@@ -199,6 +210,34 @@ func (wt *WAFTester) PrintFinalSummary() {
 	fmt.Printf("║   • Blocked Templates:        %-31d║\n", blockedTmpls)
 	fmt.Printf("║   • Total Templates:          %-31d║\n", totalTmpls)
 	fmt.Printf("║   • Template Bypass Rate:     %-30.1f%%║\n", tmplRate)
+	fmt.Println("║                                                              ║")
+	fmt.Println("║ ERROR STATISTICS:                                            ║")
+	fmt.Printf("║   • Skipped Templates:        %-31d║\n", len(skipped))
+	fmt.Printf("║   • Failed Templates:         %-31d║\n", len(failed))
+	
+	// Show top skipped templates if any
+	if len(skipped) > 0 && len(skipped) <= 5 {
+		fmt.Println("║                                                              ║")
+		fmt.Println("║ Skipped Templates:                                           ║")
+		for i, tmpl := range skipped {
+			// Truncate if too long
+			if len(tmpl) > 56 {
+				tmpl = tmpl[:53] + "..."
+			}
+			fmt.Printf("║   %d. %-56s║\n", i+1, tmpl)
+		}
+	} else if len(skipped) > 5 {
+		fmt.Println("║                                                              ║")
+		fmt.Printf("║ Skipped Templates: %d (showing first 5)                      ║\n", len(skipped))
+		for i := 0; i < 5; i++ {
+			tmpl := skipped[i]
+			if len(tmpl) > 56 {
+				tmpl = tmpl[:53] + "..."
+			}
+			fmt.Printf("║   %d. %-56s║\n", i+1, tmpl)
+		}
+	}
+	
 	fmt.Println("║                                                              ║")
 	
 	compPath, bypassPath := wt.csvWriter.GetPaths()

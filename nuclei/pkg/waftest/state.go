@@ -31,6 +31,10 @@ type ExecutionState struct {
 	BypassedTemplates  map[string]bool `json:"bypassed_templates"`  // Templates with ALL requests bypassed
 	BlockedTemplates   map[string]bool `json:"blocked_templates"`   // Templates with ANY request blocked
 	TemplateRequests   map[string]*TemplateStats `json:"template_requests"` // Per-template request stats
+	
+	// Error tracking
+	SkippedTemplates   map[string]string `json:"skipped_templates"`  // templateID -> reason (e.g., "requires interactsh")
+	FailedTemplates    map[string]string `json:"failed_templates"`   // templateID -> error message
 }
 
 // TemplateStats tracks statistics for a single template
@@ -54,6 +58,8 @@ func NewStateManager(filePath string) *StateManager {
 			BypassedTemplates:  make(map[string]bool),
 			BlockedTemplates:   make(map[string]bool),
 			TemplateRequests:   make(map[string]*TemplateStats),
+			SkippedTemplates:   make(map[string]string),
+			FailedTemplates:    make(map[string]string),
 		},
 	}
 }

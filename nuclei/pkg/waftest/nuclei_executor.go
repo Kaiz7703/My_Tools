@@ -98,38 +98,74 @@ func NewNucleiExecutor(target string, detector *WAFBypassDetector,
 }
 
 // Execute executes a single template using Nuclei engine
-func (ne *NucleiExecutor) Execute(ctx context.Context, templatePath string) error {
+func (ne *NucleiExecutor) Execute(ctx context.Context, templatePath string) (retErr error) {
+	templateID := filepath.Base(templatePath)
+	templateID = strings.TrimSuffix(templateID, filepath.Ext(templateID))
+	
+	// Panic recovery
+	defer func() {
+		if r := recover(); r != nil {
+			gologger.Warning().Msgf("[%s] Recovered from panic: %v", templateID, r)
+			ne.stateManager.RecordFailed(templateID, fmt.Sprintf("panic: %v", r))
+			retErr = nil // Continue to next template
+		}
+	}()
+	
 	defer ne.stateManager.MarkCompleted([]string{templatePath})
 
 	// Pre-process template: Flatten Flows and Inject Matchers
 	rawBytes, err := os.ReadFile(templatePath)
 	if err != nil {
-		return fmt.Errorf("failed to read template: %w", err)
+		ne.stateManager.RecordFailed(templateID, fmt.Sprintf("read error: %v", err))
+		return nil // Continue to next template
+	}
+	
+	// Early detection: Check if template requires interactsh BEFORE processing
+	rawContent := string(rawBytes)
+	if strings.Contains(rawContent, "interactsh-url") ||
+	   strings.Contains(rawContent, "{{interactsh") ||
+	   strings.Contains(rawContent, "oast-") {
+		gologger.Debug().Msgf("[%s] Skipping: requires interactsh (detected in template)", templateID)
+		ne.stateManager.RecordSkipped(templateID, "requires interactsh")
+		return nil
 	}
 
 	modBytes, err := ne.preprocessTemplate(rawBytes)
 	if err != nil {
-		gologger.Warning().Msgf("Failed to preprocess %s: %v", templatePath, err)
+		gologger.Warning().Msgf("[%s] Failed to preprocess: %v", templateID, err)
 		modBytes = rawBytes
 	}
 
 	// Create temp file
 	tmpFile, err := os.CreateTemp(filepath.Dir(templatePath), "waf-test-*.yaml")
 	if err != nil {
-		return fmt.Errorf("failed to create temp file: %w", err)
+		ne.stateManager.RecordFailed(templateID, fmt.Sprintf("temp file error: %v", err))
+		return nil
 	}
 	defer os.Remove(tmpFile.Name())
 
 	if _, err := tmpFile.Write(modBytes); err != nil {
 		tmpFile.Close()
-		return fmt.Errorf("failed to write temp file: %w", err)
+		ne.stateManager.RecordFailed(templateID, fmt.Sprintf("write error: %v", err))
+		return nil
 	}
 	tmpFile.Close()
 
 	// Parse template
 	template, err := templates.Parse(tmpFile.Name(), nil, ne.executorOpts)
 	if err != nil {
-		return fmt.Errorf("failed to parse template: %w", err)
+		// Check if interactsh-related error
+		if strings.Contains(err.Error(), "interactsh") || 
+		   strings.Contains(err.Error(), "oast") ||
+		   strings.Contains(err.Error(), "unresolved variables") {
+			gologger.Debug().Msgf("[%s] Skipping: requires interactsh", templateID)
+			ne.stateManager.RecordSkipped(templateID, "requires interactsh")
+			return nil
+		}
+		
+		gologger.Warning().Msgf("[%s] Parse error: %v", templateID, err)
+		ne.stateManager.RecordFailed(templateID, fmt.Sprintf("parse error: %v", err))
+		return nil
 	}
 	template.Path = templatePath
 
@@ -202,6 +238,8 @@ func (ne *NucleiExecutor) Execute(ctx context.Context, templatePath string) erro
 			Metadata: map[string]interface{}{"status_code": 403, "synthetic_result": true},
 		}
 		ne.processResult(syntheticResult, 1, 1, nil)
+		// Finalize template stats for synthetic result
+		ne.stateManager.FinalizeTemplate(template.ID)
 	} else {
 		total := len(results)
 		for i, result := range results {
