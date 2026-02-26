@@ -1,142 +1,192 @@
 package efficacy
 
 import (
+	"encoding/csv"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
 type ResultAnalyzer struct {
-	results []TestResult
+	summary    TestSummary
+	writer     *csv.Writer
+	file       *os.File
+	isWriting  bool
+	hasHeaders bool
+	mode       TestMode
 }
 
 func NewResultAnalyzer() *ResultAnalyzer {
-	return &ResultAnalyzer{
-		results: make([]TestResult, 0),
-	}
+	return &ResultAnalyzer{}
 }
 
-func (ra *ResultAnalyzer) AddResult(result TestResult) {
-	ra.results = append(ra.results, result)
-}
-
-func (ra *ResultAnalyzer) GetResults() []TestResult {
-	return ra.results
-}
-
-func (ra *ResultAnalyzer) GetSummary(mode TestMode) TestSummary {
-	summary := TestSummary{Mode: mode}
-
-	// Filter out errors (status code 0)
-	validResults := make([]TestResult, 0)
-	for _, r := range ra.results {
-		if r.StatusCode != 0 {
-			validResults = append(validResults, r)
-		}
-	}
-
-	summary.TotalRequests = len(validResults)
+func (ra *ResultAnalyzer) InitWriter(outputDir string, mode TestMode) error {
+	var filename string
+	ra.mode = mode
+	ra.summary = TestSummary{Mode: mode}
 
 	switch mode {
 	case ModeTruePositive:
-		for _, r := range validResults {
-			if r.Bypassed {
-				summary.BypassedCount++
-			} else {
-				summary.BlockedCount++
-			}
-		}
-		if summary.TotalRequests > 0 {
-			summary.BypassRate = float64(summary.BypassedCount) / float64(summary.TotalRequests) * 100
-		}
-
+		filename = "tp_results.csv"
 	case ModeFalsePositive:
-		for _, r := range validResults {
-			if r.FalsePositive {
-				summary.FalsePositiveCount++
-			} else {
-				summary.AllowedCount++
-			}
-		}
-		if summary.TotalRequests > 0 {
-			summary.FPRate = float64(summary.FalsePositiveCount) / float64(summary.TotalRequests) * 100
-		}
-
+		filename = "fp_results.csv"
 	case ModeMixed:
-		// Calculate both metrics
-		tpResults := make([]TestResult, 0)
-		fpResults := make([]TestResult, 0)
+		filename = "mixed_results.csv"
+	}
 
-		for _, r := range validResults {
-			if r.DatasetType == "Malicious" {
-				tpResults = append(tpResults, r)
-			} else {
-				fpResults = append(fpResults, r)
-			}
+	path := filepath.Join(outputDir, filename)
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	ra.file = file
+	ra.writer = csv.NewWriter(file)
+	ra.isWriting = true
+
+	// Write header
+	header := []string{"test_name", "url", "method", "status_code", "is_blocked"}
+
+	if mode == ModeTruePositive || mode == ModeMixed {
+		header = append(header, "bypassed")
+	}
+	if mode == ModeFalsePositive || mode == ModeMixed {
+		header = append(header, "false_positive")
+	}
+	if mode == ModeMixed {
+		header = append(header, "dataset_type")
+	}
+
+	if err := ra.writer.Write(header); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (ra *ResultAnalyzer) CloseWriter() {
+	if ra.isWriting && ra.writer != nil {
+		ra.writer.Flush()
+		if ra.file != nil {
+			ra.file.Close()
 		}
+		ra.isWriting = false
+	}
+}
 
-		// TP metrics
-		for _, r := range tpResults {
-			if r.Bypassed {
-				summary.BypassedCount++
-			} else {
-				summary.BlockedCount++
-			}
+func (ra *ResultAnalyzer) AddResult(r TestResult) {
+	if r.StatusCode == 0 {
+		return // Skip errors
+	}
+
+	// Update Metrics
+	ra.summary.TotalRequests++
+
+	if ra.mode == ModeTruePositive || (ra.mode == ModeMixed && r.DatasetType == "Malicious") {
+		if r.Bypassed {
+			ra.summary.BypassedCount++
+		} else {
+			ra.summary.BlockedCount++
 		}
-
-		// FP metrics
-		for _, r := range fpResults {
-			if r.FalsePositive {
-				summary.FalsePositiveCount++
-			} else {
-				summary.AllowedCount++
-			}
-		}
-
-		tpTotal := len(tpResults)
-		fpTotal := len(fpResults)
-
-		if tpTotal > 0 {
-			summary.BypassRate = float64(summary.BypassedCount) / float64(tpTotal) * 100
-		}
-		if fpTotal > 0 {
-			summary.FPRate = float64(summary.FalsePositiveCount) / float64(fpTotal) * 100
+	} else if ra.mode == ModeFalsePositive || (ra.mode == ModeMixed && r.DatasetType == "Legitimate") {
+		if r.FalsePositive {
+			ra.summary.FalsePositiveCount++
+		} else {
+			ra.summary.AllowedCount++
 		}
 	}
 
-	return summary
+	// Write to CSV directly if we only want TP bypassed or FP blocked
+	if ra.isWriting {
+		var shouldWrite bool
+		if ra.mode == ModeTruePositive && r.Bypassed {
+			shouldWrite = true
+		} else if ra.mode == ModeFalsePositive && r.FalsePositive {
+			shouldWrite = true
+		} else if ra.mode == ModeMixed {
+			shouldWrite = true
+		}
+
+		if shouldWrite {
+			row := []string{
+				r.TestName,
+				r.URL,
+				r.Method,
+				fmt.Sprintf("%d", r.StatusCode),
+				fmt.Sprintf("%t", r.IsBlocked),
+			}
+
+			if ra.mode == ModeTruePositive || ra.mode == ModeMixed {
+				row = append(row, fmt.Sprintf("%t", r.Bypassed))
+			}
+			if ra.mode == ModeFalsePositive || ra.mode == ModeMixed {
+				row = append(row, fmt.Sprintf("%t", r.FalsePositive))
+			}
+			if ra.mode == ModeMixed {
+				row = append(row, r.DatasetType)
+			}
+
+			_ = ra.writer.Write(row)
+		}
+	}
 }
 
-func (ra *ResultAnalyzer) PrintSummary(summary TestSummary) {
+func (ra *ResultAnalyzer) GetSummary() TestSummary {
+	switch ra.mode {
+	case ModeTruePositive:
+		if ra.summary.TotalRequests > 0 {
+			ra.summary.BypassRate = float64(ra.summary.BypassedCount) / float64(ra.summary.TotalRequests) * 100
+		}
+	case ModeFalsePositive:
+		if ra.summary.TotalRequests > 0 {
+			ra.summary.FPRate = float64(ra.summary.FalsePositiveCount) / float64(ra.summary.TotalRequests) * 100
+		}
+	case ModeMixed:
+		tpTotal := ra.summary.BypassedCount + ra.summary.BlockedCount
+		fpTotal := ra.summary.FalsePositiveCount + ra.summary.AllowedCount
+
+		if tpTotal > 0 {
+			ra.summary.BypassRate = float64(ra.summary.BypassedCount) / float64(tpTotal) * 100
+		}
+		if fpTotal > 0 {
+			ra.summary.FPRate = float64(ra.summary.FalsePositiveCount) / float64(fpTotal) * 100
+		}
+	}
+
+	return ra.summary
+}
+
+func (ra *ResultAnalyzer) PrintSummary() {
 	fmt.Println("\n" + strings.Repeat("=", 60))
 
-	switch summary.Mode {
+	switch ra.mode {
 	case ModeTruePositive:
 		fmt.Println("TRUE POSITIVE TEST RESULTS")
 		fmt.Println(strings.Repeat("=", 60))
-		fmt.Printf("Total Malicious Requests: %d\n", summary.TotalRequests)
-		fmt.Printf("Bypassed (200):           %d\n", summary.BypassedCount)
-		fmt.Printf("Blocked (400/403):        %d\n", summary.BlockedCount)
-		fmt.Printf("Bypass Rate:              %.2f%%\n", summary.BypassRate)
+		fmt.Printf("Total Malicious Requests: %d\n", ra.summary.TotalRequests)
+		fmt.Printf("Bypassed (200):           %d\n", ra.summary.BypassedCount)
+		fmt.Printf("Blocked (400/403):        %d\n", ra.summary.BlockedCount)
+		fmt.Printf("Bypass Rate:              %.2f%%\n", ra.summary.BypassRate)
 
 	case ModeFalsePositive:
 		fmt.Println("FALSE POSITIVE TEST RESULTS")
 		fmt.Println(strings.Repeat("=", 60))
-		fmt.Printf("Total Legitimate Requests: %d\n", summary.TotalRequests)
-		fmt.Printf("Allowed (200):             %d\n", summary.AllowedCount)
-		fmt.Printf("False Positives (400/403): %d\n", summary.FalsePositiveCount)
-		fmt.Printf("False Positive Rate:       %.2f%%\n", summary.FPRate)
+		fmt.Printf("Total Legitimate Requests: %d\n", ra.summary.TotalRequests)
+		fmt.Printf("Allowed (200):             %d\n", ra.summary.AllowedCount)
+		fmt.Printf("False Positives (400/403): %d\n", ra.summary.FalsePositiveCount)
+		fmt.Printf("False Positive Rate:       %.2f%%\n", ra.summary.FPRate)
 
 	case ModeMixed:
 		fmt.Println("MIXED TEST RESULTS")
 		fmt.Println(strings.Repeat("=", 60))
 		fmt.Println("True Positive Metrics:")
-		fmt.Printf("  Bypassed:     %d\n", summary.BypassedCount)
-		fmt.Printf("  Blocked:      %d\n", summary.BlockedCount)
-		fmt.Printf("  Bypass Rate:  %.2f%%\n", summary.BypassRate)
+		fmt.Printf("  Bypassed:     %d\n", ra.summary.BypassedCount)
+		fmt.Printf("  Blocked:      %d\n", ra.summary.BlockedCount)
+		fmt.Printf("  Bypass Rate:  %.2f%%\n", ra.summary.BypassRate)
 		fmt.Println("\nFalse Positive Metrics:")
-		fmt.Printf("  Allowed:      %d\n", summary.AllowedCount)
-		fmt.Printf("  FP Count:     %d\n", summary.FalsePositiveCount)
-		fmt.Printf("  FP Rate:      %.2f%%\n", summary.FPRate)
+		fmt.Printf("  Allowed:      %d\n", ra.summary.AllowedCount)
+		fmt.Printf("  FP Count:     %d\n", ra.summary.FalsePositiveCount)
+		fmt.Printf("  FP Rate:      %.2f%%\n", ra.summary.FPRate)
 	}
 
 	fmt.Println(strings.Repeat("=", 60))

@@ -26,7 +26,11 @@ func main() {
 	// Initialize components
 	client := efficacy.NewHTTPClient(cfg.WAFURL, cfg.Timeout, cfg.Verbose, cfg.Debug)
 	analyzer := efficacy.NewResultAnalyzer()
-	writer := efficacy.NewCSVWriter(cfg.OutputDir)
+
+	if err := analyzer.InitWriter(cfg.OutputDir, cfg.Mode); err != nil {
+		log.Fatalf("Failed to initialize CSV writer: %v", err)
+	}
+	defer analyzer.CloseWriter()
 
 	// Run tests based on mode
 	switch cfg.Mode {
@@ -40,74 +44,68 @@ func main() {
 	}
 
 	// Generate summary and save results
-	summary := analyzer.GetSummary(cfg.Mode)
-	analyzer.PrintSummary(summary)
-
-	if err := writer.WriteResults(analyzer.GetResults(), cfg.Mode); err != nil {
-		log.Fatalf("Failed to write results: %v", err)
-	}
+	_ = analyzer.GetSummary()
+	analyzer.PrintSummary()
 }
 
 func runTPTest(cfg *efficacy.Config, client *efficacy.HTTPClient, analyzer *efficacy.ResultAnalyzer) {
 	fmt.Println("Running True Positive tests...")
 
 	loader := efficacy.NewPayloadLoader(cfg.MaliciousPath)
-	datasets, err := loader.LoadAll()
+	files, err := loader.GetFiles()
 	if err != nil {
-		log.Fatalf("Failed to load malicious datasets: %v", err)
+		log.Fatalf("Failed to locate malicious datasets: %v", err)
 	}
 
-	runTests(datasets, "Malicious", cfg, client, analyzer)
+	runTests(files, "Malicious", cfg, client, analyzer, loader)
 }
 
 func runFPTest(cfg *efficacy.Config, client *efficacy.HTTPClient, analyzer *efficacy.ResultAnalyzer) {
 	fmt.Println("Running False Positive tests...")
 
 	loader := efficacy.NewPayloadLoader(cfg.LegitimPath)
-	datasets, err := loader.LoadAll()
+	files, err := loader.GetFiles()
 	if err != nil {
-		log.Fatalf("Failed to load legitimate datasets: %v", err)
+		log.Fatalf("Failed to locate legitimate datasets: %v", err)
 	}
 
-	runTests(datasets, "Legitimate", cfg, client, analyzer)
+	runTests(files, "Legitimate", cfg, client, analyzer, loader)
 }
 
-func runTests(datasets map[string][]efficacy.Payload, datasetType string, cfg *efficacy.Config, client *efficacy.HTTPClient, analyzer *efficacy.ResultAnalyzer) {
-	// Count total payloads
-	total := 0
-	for _, payloads := range datasets {
-		total += len(payloads)
+func runTests(files map[string]string, datasetType string, cfg *efficacy.Config, client *efficacy.HTTPClient, analyzer *efficacy.ResultAnalyzer, loader *efficacy.PayloadLoader) {
+	// Initialize progress bar without a known total at first
+	bar := progressbar.Default(-1, "Processing Payloads")
+
+	resultsChan := make(chan efficacy.TestResult, cfg.Workers*2)
+
+	// Create a channel for workers to consume payloads
+	type job struct {
+		testName string
+		payload  efficacy.Payload
 	}
+	jobsChan := make(chan job, cfg.Workers*2)
 
-	bar := progressbar.Default(int64(total))
-
-	// Process with workers
-	var wg sync.WaitGroup
-	semaphore := make(chan struct{}, cfg.Workers)
-	resultsChan := make(chan efficacy.TestResult, total)
-
-	for testName, payloads := range datasets {
-		for _, payload := range payloads {
-			wg.Add(1)
-
-			go func(tn string, p efficacy.Payload) {
-				defer wg.Done()
-				semaphore <- struct{}{}
-				defer func() { <-semaphore }()
-
+	// Start workers
+	var wgWorkers sync.WaitGroup
+	for i := 0; i < cfg.Workers; i++ {
+		wgWorkers.Add(1)
+		go func() {
+			defer wgWorkers.Done()
+			for j := range jobsChan {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Timeout)*time.Second)
-				defer cancel()
 
-				statusCode, isBlocked, err := client.SendRequest(ctx, p)
+				statusCode, isBlocked, err := client.SendRequest(ctx, j.payload)
+				cancel()
+
 				if err != nil {
 					statusCode = 0
 					isBlocked = false
 				}
 
 				result := efficacy.TestResult{
-					TestName:    tn,
-					URL:         p.URL,
-					Method:      p.Method,
+					TestName:    j.testName,
+					URL:         j.payload.URL,
+					Method:      j.payload.Method,
 					StatusCode:  statusCode,
 					IsBlocked:   isBlocked,
 					DatasetType: datasetType,
@@ -122,19 +120,50 @@ func runTests(datasets map[string][]efficacy.Payload, datasetType string, cfg *e
 
 				resultsChan <- result
 				bar.Add(1)
-			}(testName, payload)
-		}
+			}
+		}()
 	}
 
-	// Wait and collect results
+	// Result collector
+	var wgCollector sync.WaitGroup
+	wgCollector.Add(1)
 	go func() {
-		wg.Wait()
-		close(resultsChan)
+		defer wgCollector.Done()
+		for result := range resultsChan {
+			analyzer.AddResult(result)
+		}
 	}()
 
-	for result := range resultsChan {
-		analyzer.AddResult(result)
+	// Read files and stream payloads
+	for testName, path := range files {
+		payloadsChan := make(chan efficacy.Payload, 100)
+
+		var fileWg sync.WaitGroup
+		fileWg.Add(1)
+		go func(tn string) {
+			defer fileWg.Done()
+			for p := range payloadsChan {
+				jobsChan <- job{testName: tn, payload: p}
+			}
+		}(testName)
+
+		_, err := loader.StreamFile(path, payloadsChan)
+		if err != nil {
+			log.Printf("Warning: failed to fully read %s: %v", path, err)
+		}
+		close(payloadsChan)
+		fileWg.Wait() // wait for current file to finish sending to jobs
 	}
 
+	// Signal workers no more jobs
+	close(jobsChan)
+	// Wait for workers to finish
+	wgWorkers.Wait()
+	// Signal collector no more results
+	close(resultsChan)
+	// Wait for collector to finish
+	wgCollector.Wait()
+
 	bar.Finish()
+	fmt.Println()
 }

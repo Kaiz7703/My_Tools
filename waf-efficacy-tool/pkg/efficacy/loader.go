@@ -15,8 +15,9 @@ func NewPayloadLoader(dataPath string) *PayloadLoader {
 	return &PayloadLoader{dataPath: dataPath}
 }
 
-func (pl *PayloadLoader) LoadAll() (map[string][]Payload, error) {
-	datasets := make(map[string][]Payload)
+// GetFiles returns a map of test name to absolute file path instead of loading all payloads to RAM.
+func (pl *PayloadLoader) GetFiles() (map[string]string, error) {
+	files := make(map[string]string)
 
 	err := filepath.Walk(pl.dataPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -24,32 +25,53 @@ func (pl *PayloadLoader) LoadAll() (map[string][]Payload, error) {
 		}
 
 		if !info.IsDir() && filepath.Ext(path) == ".json" {
-			payloads, err := pl.loadFile(path)
-			if err != nil {
-				return fmt.Errorf("failed to load %s: %w", path, err)
-			}
-
 			testName := filepath.Base(path)
 			testName = testName[:len(testName)-5] // Remove .json
-			datasets[testName] = payloads
+			files[testName] = path
 		}
 
 		return nil
 	})
 
-	return datasets, err
+	return files, err
 }
 
-func (pl *PayloadLoader) loadFile(path string) ([]Payload, error) {
-	data, err := os.ReadFile(path)
+// StreamFile decodes a JSON file containing a JSON array of Payload structs sequentially.
+// It sends parsed payloads into the provided channel and closes the payload count when finished.
+func (pl *PayloadLoader) StreamFile(path string, payloadsChan chan<- Payload) (int, error) {
+	file, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return 0, err
+	}
+	defer file.Close()
+
+	decoder := json.NewDecoder(file)
+
+	// Read opening bracket '['
+	t, err := decoder.Token()
+	if err != nil {
+		return 0, fmt.Errorf("failed to read opening token: %w", err)
+	}
+	if delim, ok := t.(json.Delim); !ok || delim != '[' {
+		return 0, fmt.Errorf("expected JSON array, got %v", t)
 	}
 
-	var payloads []Payload
-	if err := json.Unmarshal(data, &payloads); err != nil {
-		return nil, err
+	count := 0
+	// While the array contains values
+	for decoder.More() {
+		var payload Payload
+		if err := decoder.Decode(&payload); err != nil {
+			return count, fmt.Errorf("failed to decode element %d: %w", count, err)
+		}
+		payloadsChan <- payload
+		count++
 	}
 
-	return payloads, nil
+	// Read closing bracket ']'
+	_, err = decoder.Token()
+	if err != nil {
+		return count, fmt.Errorf("failed to read closing token: %w", err)
+	}
+
+	return count, nil
 }
