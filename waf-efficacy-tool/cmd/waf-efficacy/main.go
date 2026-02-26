@@ -24,7 +24,7 @@ func main() {
 	fmt.Printf("Mode: %s\n\n", cfg.Mode)
 
 	// Initialize components
-	client := efficacy.NewHTTPClient(cfg.WAFURL, cfg.Timeout)
+	client := efficacy.NewHTTPClient(cfg.WAFURL, cfg.Timeout, cfg.Verbose, cfg.Debug)
 	analyzer := efficacy.NewResultAnalyzer()
 	writer := efficacy.NewCSVWriter(cfg.OutputDir)
 

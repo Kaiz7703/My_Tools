@@ -53,4 +53,6 @@ type Config struct {
 	OutputDir     string
 	Timeout       int
 	Workers       int
+	Verbose       bool
+	Debug         bool
 }

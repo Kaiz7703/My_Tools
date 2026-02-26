@@ -45,7 +45,64 @@ go build -o waf-efficacy ./cmd/waf-efficacy
 ./waf-efficacy -u http://your-waf.com --fp-only
 
 # Test both (default)
-./waf-efficacy -u http://your-waf.com --mixed
+./waf-efficacy -u http://your-waf.com
+```
+
+### **Verbose Mode**
+
+```bash
+# Show each request summary
+./waf-efficacy -u http://your-waf.com -v
+```
+
+**Output:**
+```
+[DEBUG] GET http://waf.com/?p=<script>alert(1)</script>
+[DEBUG] Response: 403 (blocked=true)
+```
+
+### **Debug Mode (Detailed)**
+
+```bash
+# Show full request/response details
+./waf-efficacy -u http://your-waf.com --debug
+```
+
+**Output:**
+```
+======================================================================
+📤 REQUEST
+----------------------------------------------------------------------
+GET http://waf.com/?p=<script>alert(1)</script>
+
+Headers:
+  User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+  Connection: close
+
+Body:
+(empty)
+----------------------------------------------------------------------
+📥 RESPONSE
+----------------------------------------------------------------------
+Status: 403 Forbidden
+
+Headers:
+  Content-Type: text/html
+  Server: nginx
+  Cloudrity-WAF-Return: backend
+
+Body (189 bytes):
+<!DOCTYPE html>
+<head>
+<title>Cloudrity</title>
+</head>
+<body>
+<h1>The server name is not supported.</h1>
+</body>
+</html>
+----------------------------------------------------------------------
+Result: isBlocked=true
+======================================================================
 ```
 
 ### **Advanced Options**
@@ -58,7 +115,7 @@ go build -o waf-efficacy ./cmd/waf-efficacy
   -o ./results \
   -timeout 10 \
   -workers 20 \
-  --mixed
+  --debug
 ```
 
 ### **Flags**
@@ -73,7 +130,8 @@ go build -o waf-efficacy ./cmd/waf-efficacy
 | `-workers` | Concurrent workers | `10` |
 | `--tp-only` | Test TP only | `false` |
 | `--fp-only` | Test FP only | `false` |
-| `--mixed` | Test both | `false` |
+| `-v` | Verbose mode (show request summary) | `false` |
+| `--debug` | Debug mode (show full request/response) | `false` |
 
 ## 📊 Dataset Format
 
@@ -184,6 +242,66 @@ waf-efficacy-tool/
 │       └── writer.go        # CSV writer
 ├── go.mod
 └── README.md
+```
+
+## 🐛 Troubleshooting
+
+### **No Requests Reaching WAF**
+
+**Problem:** Tool runs but no requests appear in WAF logs.
+
+**Solution:** Use debug mode to verify requests:
+```bash
+./waf-efficacy -u http://your-waf.com --tp-only --debug
+```
+
+Check:
+- ✅ WAF URL is correct
+- ✅ Network connectivity
+- ✅ Firewall rules
+- ✅ Request headers in debug output
+
+### **All Requests Timeout**
+
+**Problem:** All requests return status code 0.
+
+**Solution:**
+```bash
+# Increase timeout
+./waf-efficacy -u http://your-waf.com -timeout 30
+
+# Reduce workers
+./waf-efficacy -u http://your-waf.com -workers 5
+```
+
+### **Unexpected Detection Results**
+
+**Problem:** WAF blocks legitimate requests or allows malicious ones.
+
+**Solution:** Use debug mode to inspect responses:
+```bash
+./waf-efficacy -u http://your-waf.com --debug
+```
+
+Check response:
+- Status code (200 vs 400/403)
+- Response headers (WAF headers)
+- Response body (block message)
+
+### **Dataset Not Found**
+
+**Problem:** `Failed to load datasets: no such file or directory`
+
+**Solution:**
+```bash
+# Verify dataset path
+ls Data/Malicious/*.json
+ls Data/Legitimate/*.json
+
+# Or specify custom path
+./waf-efficacy -u http://waf.com \
+  -malicious /path/to/malicious \
+  -legitimate /path/to/legitimate
 ```
 
 ## 🎯 Use Cases

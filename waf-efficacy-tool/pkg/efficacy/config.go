@@ -18,12 +18,17 @@ func ParseFlags() (*Config, error) {
 	// Mode flags
 	tpOnly := flag.Bool("tp-only", false, "Test True Positive only")
 	fpOnly := flag.Bool("fp-only", false, "Test False Positive only")
+	verbose := flag.Bool("v", false, "Verbose output (show each request)")
+	debug := flag.Bool("debug", false, "Debug mode (show full request/response details)")
 
 	flag.Parse()
 
 	if cfg.WAFURL == "" {
 		return nil, fmt.Errorf("WAF URL is required (-u)")
 	}
+
+	cfg.Verbose = *verbose
+	cfg.Debug = *debug
 
 	// Determine mode (default to mixed)
 	if *tpOnly {
