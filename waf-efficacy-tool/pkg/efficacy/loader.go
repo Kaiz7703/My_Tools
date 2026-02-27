@@ -63,6 +63,8 @@ func (pl *PayloadLoader) StreamFile(path string, payloadsChan chan<- Payload) (i
 		if err := decoder.Decode(&payload); err != nil {
 			return count, fmt.Errorf("failed to decode element %d: %w", count, err)
 		}
+
+		payload.Index = count
 		payloadsChan <- payload
 		count++
 	}

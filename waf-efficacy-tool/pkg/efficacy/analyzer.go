@@ -45,7 +45,7 @@ func (ra *ResultAnalyzer) InitWriter(outputDir string, mode TestMode) error {
 	ra.isWriting = true
 
 	// Write header
-	header := []string{"test_name", "url", "method", "status_code", "is_blocked"}
+	header := []string{"test_name", "index", "url", "method", "status_code", "is_blocked"}
 
 	if mode == ModeTruePositive || mode == ModeMixed {
 		header = append(header, "bypassed")
@@ -110,6 +110,7 @@ func (ra *ResultAnalyzer) AddResult(r TestResult) {
 		if shouldWrite {
 			row := []string{
 				r.TestName,
+				fmt.Sprintf("%d", r.Index),
 				r.URL,
 				r.Method,
 				fmt.Sprintf("%d", r.StatusCode),

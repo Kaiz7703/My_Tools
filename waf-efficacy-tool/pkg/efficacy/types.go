@@ -13,6 +13,7 @@ const (
 
 // Payload represents a single test payload
 type Payload struct {
+	Index   int               `json:"-"` // Track index in JSON array
 	Method  string            `json:"method"`
 	URL     string            `json:"url"`
 	Headers map[string]string `json:"headers"`
@@ -21,15 +22,16 @@ type Payload struct {
 
 // TestResult represents the result of a single test
 type TestResult struct {
-	TestName       string
-	URL            string
-	Method         string
-	StatusCode     int
-	IsBlocked      bool
-	Bypassed       bool   // For TP tests
-	FalsePositive  bool   // For FP tests
-	DatasetType    string // "Malicious" or "Legitimate"
-	Timestamp      time.Time
+	TestName      string
+	Index         int
+	URL           string
+	Method        string
+	StatusCode    int
+	IsBlocked     bool
+	Bypassed      bool   // For TP tests
+	FalsePositive bool   // For FP tests
+	DatasetType   string // "Malicious" or "Legitimate"
+	Timestamp     time.Time
 }
 
 // TestSummary contains aggregated test results

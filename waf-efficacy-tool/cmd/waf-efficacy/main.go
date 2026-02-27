@@ -104,6 +104,7 @@ func runTests(files map[string]string, datasetType string, cfg *efficacy.Config,
 
 				result := efficacy.TestResult{
 					TestName:    j.testName,
+					Index:       j.payload.Index,
 					URL:         j.payload.URL,
 					Method:      j.payload.Method,
 					StatusCode:  statusCode,
