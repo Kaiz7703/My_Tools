@@ -46,20 +46,21 @@ func NewNucleiExecutor(target string, detector *WAFBypassDetector,
 
 	// Create minimal Nuclei options
 	options := &types.Options{
-		Targets:         []string{target},
-		Silent:          true,
-		NoColor:         true,
-		Verbose:         false,
-		Debug:           false,
-		UpdateTemplates: false,
-		NoInteractsh:    true,
-		Timeout:         10,
-		Retries:         0,
-		RateLimit:       0,
-		BulkSize:        1,
-		TemplateThreads: 1,
-		Logger:          gologger.DefaultLogger,
-		StoreResponse:   true, // CRITICAL: Enable response storage for status code extraction
+		Targets:              []string{target},
+		Silent:               true,
+		NoColor:              true,
+		Verbose:              false,
+		Debug:                false,
+		UpdateTemplates:      false,
+		NoInteractsh:         true,
+		Timeout:              10,
+		Retries:              0,
+		RateLimit:            0,
+		BulkSize:             1,
+		TemplateThreads:      1,
+		Logger:               gologger.DefaultLogger,
+		StoreResponse:        true, // CRITICAL: Enable response storage for status code extraction
+		AllowLocalFileAccess: true, // CRITICAL: Allow loading payload lists from external txt files
 	}
 
 	// Create catalog
@@ -82,7 +83,7 @@ func NewNucleiExecutor(target string, detector *WAFBypassDetector,
 		Catalog:  catalogInstance,
 		Progress: &VoidProgress{}, // Fix: Set progress tracker to prevent nil pointer panic
 		Logger:   gologger.DefaultLogger,
-		Parser:   parser, // Required by templates.Parse()
+		Parser:   parser,        // Required by templates.Parse()
 		Output:   &VoidWriter{}, // Fix: Set output writer to prevent nil pointer panic
 	}
 
@@ -103,7 +104,7 @@ func NewNucleiExecutor(target string, detector *WAFBypassDetector,
 func (ne *NucleiExecutor) Execute(ctx context.Context, templatePath string) (retErr error) {
 	templateID := filepath.Base(templatePath)
 	templateID = strings.TrimSuffix(templateID, filepath.Ext(templateID))
-	
+
 	// Panic recovery
 	defer func() {
 		if r := recover(); r != nil {
@@ -112,7 +113,7 @@ func (ne *NucleiExecutor) Execute(ctx context.Context, templatePath string) (ret
 			retErr = nil // Continue to next template
 		}
 	}()
-	
+
 	defer ne.stateManager.MarkCompleted([]string{templatePath})
 
 	// Pre-process template: Flatten Flows and Inject Matchers
@@ -121,18 +122,18 @@ func (ne *NucleiExecutor) Execute(ctx context.Context, templatePath string) (ret
 		ne.stateManager.RecordFailed(templateID, fmt.Sprintf("read error: %v", err))
 		return nil // Continue to next template
 	}
-	
+
 	// Early detection: Check if template requires interactsh BEFORE processing
 	rawContent := string(rawBytes)
 	if strings.Contains(rawContent, "interactsh-url") ||
-	   strings.Contains(rawContent, "{{interactsh") ||
-	   strings.Contains(rawContent, "oast-") {
+		strings.Contains(rawContent, "{{interactsh") ||
+		strings.Contains(rawContent, "oast-") {
 		gologger.Debug().Msgf("[%s] Skipping: requires interactsh (detected in template)", templateID)
 		ne.stateManager.RecordSkipped(templateID, "requires interactsh")
 		return nil
 	}
 
-	modBytes, err := ne.preprocessTemplate(rawBytes)
+	modBytes, err := ne.preprocessTemplate(rawBytes, templatePath)
 	if err != nil {
 		gologger.Warning().Msgf("[%s] Failed to preprocess: %v", templateID, err)
 		modBytes = rawBytes
@@ -157,14 +158,14 @@ func (ne *NucleiExecutor) Execute(ctx context.Context, templatePath string) (ret
 	template, err := templates.Parse(tmpFile.Name(), nil, ne.executorOpts)
 	if err != nil {
 		// Check if interactsh-related error
-		if strings.Contains(err.Error(), "interactsh") || 
-		   strings.Contains(err.Error(), "oast") ||
-		   strings.Contains(err.Error(), "unresolved variables") {
+		if strings.Contains(err.Error(), "interactsh") ||
+			strings.Contains(err.Error(), "oast") ||
+			strings.Contains(err.Error(), "unresolved variables") {
 			gologger.Debug().Msgf("[%s] Skipping: requires interactsh", templateID)
 			ne.stateManager.RecordSkipped(templateID, "requires interactsh")
 			return nil
 		}
-		
+
 		gologger.Warning().Msgf("[%s] Parse error: %v", templateID, err)
 		ne.stateManager.RecordFailed(templateID, fmt.Sprintf("parse error: %v", err))
 		return nil
@@ -178,11 +179,11 @@ func (ne *NucleiExecutor) Execute(ctx context.Context, templatePath string) (ret
 	// Create scan context
 	metaInput := contextargs.NewMetaInput()
 	metaInput.Input = ne.target
-	
+
 	// Debug: Log what we're passing to template
 	gologger.Debug().Msgf("[%s] Setting target for template: %s", template.ID, ne.target)
 	gologger.Debug().Msgf("[%s] Template will receive {{Hostname}} = %s", template.ID, ne.target)
-	
+
 	ctxArgs := contextargs.New(ctx)
 	ctxArgs.MetaInput = metaInput
 	scanCtx := scan.NewScanContext(ctx, ctxArgs)
@@ -190,12 +191,12 @@ func (ne *NucleiExecutor) Execute(ctx context.Context, templatePath string) (ret
 	// Callback for Flow results (deprecated if we flatten, but good for backup)
 	var flowResults []*output.ResultEvent
 	var internalEvents []*output.InternalWrappedEvent // Store InternalEvents for status code extraction
-	
+
 	scanCtx.OnResult = func(event *output.InternalWrappedEvent) {
 		if event != nil {
 			// Store the InternalEvent for later processing
 			internalEvents = append(internalEvents, event)
-			
+
 			if event.Results != nil {
 				flowResults = append(flowResults, event.Results...)
 			}
@@ -216,15 +217,21 @@ func (ne *NucleiExecutor) Execute(ctx context.Context, templatePath string) (ret
 		return fmt.Sprintf("%s|%s|%d", r.TemplateID, r.Matched, r.Timestamp.UnixNano())
 	}
 
-	for _, r := range results { uniqueResults[genKey(r)] = r }
-	for _, r := range flowResults { uniqueResults[genKey(r)] = r }
+	for _, r := range results {
+		uniqueResults[genKey(r)] = r
+	}
+	for _, r := range flowResults {
+		uniqueResults[genKey(r)] = r
+	}
 
 	finalResults := make([]*output.ResultEvent, 0, len(uniqueResults))
-	for _, r := range uniqueResults { finalResults = append(finalResults, r) }
+	for _, r := range uniqueResults {
+		finalResults = append(finalResults, r)
+	}
 	results = finalResults
 
 	gologger.Debug().Msgf("[%s] Got %d unique results, %d internal events", template.ID, len(results), len(internalEvents))
-	
+
 	// Create a map to enrich ResultEvents with InternalEvent data
 	enrichmentMap := make(map[string]map[string]interface{})
 	for _, ie := range internalEvents {
@@ -242,7 +249,7 @@ func (ne *NucleiExecutor) Execute(ctx context.Context, templatePath string) (ret
 			Info:       template.Info,
 			Matched:    ne.target,
 			Timestamp:  time.Now(),
-			Metadata: map[string]interface{}{"status_code": 403, "synthetic_result": true},
+			Metadata:   map[string]interface{}{"status_code": 403, "synthetic_result": true},
 		}
 		ne.processResult(syntheticResult, 1, 1, nil)
 		// Finalize template stats for synthetic result
@@ -251,14 +258,14 @@ func (ne *NucleiExecutor) Execute(ctx context.Context, templatePath string) (ret
 		total := len(results)
 		for i, result := range results {
 			gologger.Debug().Msgf("[%s] Processing result %d/%d", template.ID, i+1, total)
-			
+
 			// Try to find matching InternalEvent for enrichment
 			key := fmt.Sprintf("%s|%s", result.TemplateID, result.Matched)
 			internalEvent := enrichmentMap[key]
-			
+
 			ne.processResult(result, i+1, total, internalEvent)
 		}
-		
+
 		// Finalize template stats after processing all results
 		ne.stateManager.FinalizeTemplate(template.ID)
 	}
@@ -267,7 +274,7 @@ func (ne *NucleiExecutor) Execute(ctx context.Context, templatePath string) (ret
 }
 
 // preprocessTemplate removes Flow logic and injects catch-all matchers
-func (ne *NucleiExecutor) preprocessTemplate(data []byte) ([]byte, error) {
+func (ne *NucleiExecutor) preprocessTemplate(data []byte, templatePath string) ([]byte, error) {
 	var tpl map[string]interface{}
 	if err := yaml.Unmarshal(data, &tpl); err != nil {
 		return nil, err
@@ -278,7 +285,48 @@ func (ne *NucleiExecutor) preprocessTemplate(data []byte) ([]byte, error) {
 	// Ensure we don't stop early
 	tpl["stop-at-first-match"] = false
 
-	// 2. Inject Catch-All Matchers
+	// Helper to resolve and embed payload lists directly into memory
+	readPayloadFile := func(path string) ([]string, bool) {
+		absPath := path
+		if !filepath.IsAbs(path) {
+			absPath = filepath.Join(filepath.Dir(templatePath), path)
+		}
+
+		if _, err := os.Stat(absPath); os.IsNotExist(err) {
+			return nil, false
+		}
+
+		fileData, err := os.ReadFile(absPath)
+		if err != nil {
+			return nil, false
+		}
+
+		lines := strings.Split(string(fileData), "\n")
+		var validLines []string
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				validLines = append(validLines, line)
+			}
+		}
+
+		gologger.Info().Msgf("[%s] Extracted %d payloads from %s and embedded directly into template memory", filepath.Base(templatePath), len(validLines), filepath.Base(absPath))
+		return validLines, true
+	}
+
+	// Cache variables for lookup
+	varMapCache := make(map[string]interface{})
+	if vars, ok := tpl["variables"]; ok {
+		if varsMap, ok := vars.(map[interface{}]interface{}); ok {
+			for k, v := range varsMap {
+				if ks, ok := k.(string); ok {
+					varMapCache[ks] = v
+				}
+			}
+		}
+	}
+
+	// 2. Inject Catch-All Matchers & Embed Payloads
 	injectFn := func(requests []interface{}) {
 		for _, req := range requests {
 			if reqMap, ok := req.(map[interface{}]interface{}); ok {
@@ -293,9 +341,54 @@ func (ne *NucleiExecutor) preprocessTemplate(data []byte) ([]byte, error) {
 					"name": "force-log",
 				}
 				reqMap["matchers"] = []interface{}{trueMatcher}
-				
-				// Request level stop-at-first-match might be relevant in some versions
 				reqMap["stop-at-first-match"] = false
+
+				// Detect and embed payload files
+				if p, ok := reqMap["payloads"]; ok {
+					if payloadsMap, ok := p.(map[interface{}]interface{}); ok {
+						for k, v := range payloadsMap {
+							processStrPayload := func(strVal string) interface{} {
+								if strings.HasPrefix(strVal, "{{") && strings.HasSuffix(strVal, "}}") {
+									varName := strings.TrimSuffix(strings.TrimPrefix(strVal, "{{"), "}}")
+									if fileRef, exists := varMapCache[varName].(string); exists {
+										if lines, ok := readPayloadFile(fileRef); ok {
+											return lines
+										}
+									}
+								} else {
+									// Direct path matching .txt
+									if strings.HasSuffix(strVal, ".txt") || strings.Contains(strVal, "/payloads/") {
+										if lines, ok := readPayloadFile(strVal); ok {
+											return lines
+										}
+									}
+								}
+								return strVal
+							}
+
+							if strVal, isStr := v.(string); isStr {
+								payloadsMap[k] = processStrPayload(strVal)
+							} else if arrVal, isArr := v.([]interface{}); isArr {
+								var newArr []interface{}
+								for _, item := range arrVal {
+									if strItem, isItemStr := item.(string); isItemStr {
+										res := processStrPayload(strItem)
+										if lines, isSlice := res.([]string); isSlice {
+											for _, l := range lines {
+												newArr = append(newArr, l)
+											}
+										} else {
+											newArr = append(newArr, strItem)
+										}
+									} else {
+										newArr = append(newArr, item)
+									}
+								}
+								payloadsMap[k] = newArr
+							}
+						}
+					}
+				}
 			}
 		}
 	}
@@ -310,17 +403,8 @@ func (ne *NucleiExecutor) preprocessTemplate(data []byte) ([]byte, error) {
 			injectFn(requests)
 		}
 	}
-	
-	// DEBUG: Dump one template to verify structure
-	// Simply write to a fixed path "debug_last_template.yaml"
-	// We handle error silently to not break flow
-	_ = os.WriteFile("debug_last_template.yaml", []byte("Placeholder"), 0644) // Placeholder check
-	
-	bytes, err := yaml.Marshal(tpl)
-	if err == nil {
-		_ = os.WriteFile("debug_last_template.yaml", bytes, 0644)
-	}
 
+	bytes, err := yaml.Marshal(tpl)
 	return bytes, err
 }
 
@@ -344,23 +428,23 @@ func (ne *NucleiExecutor) processResult(result *output.ResultEvent, flowIndex, t
 	if statusCode == 0 {
 		gologger.Debug().Msgf("[%s] Status 0. Meta: %v", result.TemplateID, result.Metadata)
 	}
-	
+
 	// Debug: Print all response headers if available
 	gologger.Debug().Msgf("[%s] Status Code: %d, WAF Header: '%s'", result.TemplateID, statusCode, wafStatus)
-	
+
 	// Detailed verbose mode: Print full request/response
 	if ne.detailedVerbose {
 		fmt.Println("\n" + strings.Repeat("=", 70))
 		fmt.Printf("TEMPLATE: %s | STATUS: %s\n", result.TemplateID, status)
 		fmt.Println(strings.Repeat("=", 70))
-		
+
 		// Print request details
 		if result.Request != "" {
 			fmt.Println("\n📤 REQUEST:")
 			fmt.Println(strings.Repeat("-", 70))
 			fmt.Println(result.Request)
 		}
-		
+
 		// Print response details
 		if result.Response != "" {
 			fmt.Println("\n📥 RESPONSE:")
@@ -381,7 +465,7 @@ func (ne *NucleiExecutor) processResult(result *output.ResultEvent, flowIndex, t
 				}
 			}
 		}
-		
+
 		// Print metadata
 		if len(result.Metadata) > 0 {
 			fmt.Println("\n📊 METADATA:")
@@ -390,10 +474,10 @@ func (ne *NucleiExecutor) processResult(result *output.ResultEvent, flowIndex, t
 				fmt.Printf("%s: %v\n", k, v)
 			}
 		}
-		
+
 		fmt.Println(strings.Repeat("=", 70) + "\n")
 	}
-	
+
 	// Try to extract and print all headers for debugging
 	if result.Metadata != nil {
 		if h, ok := result.Metadata["response_headers"].(http.Header); ok {
@@ -458,7 +542,7 @@ func (ne *NucleiExecutor) extractStatusCode(result *output.ResultEvent, internal
 		}
 		gologger.Debug().Msgf("[%s] InternalEvent keys: %v", result.TemplateID, getKeys(internalEvent))
 	}
-	
+
 	// Method 2: Parse from result.Response string (fallback)
 	gologger.Debug().Msgf("[%s] Response length: %d bytes", result.TemplateID, len(result.Response))
 	if result.Response == "" {
@@ -466,24 +550,24 @@ func (ne *NucleiExecutor) extractStatusCode(result *output.ResultEvent, internal
 		gologger.Debug().Msgf("[%s] Request: %d bytes", result.TemplateID, len(result.Request))
 		return 0
 	}
-	
+
 	// Show first 200 chars of response for debugging
 	preview := result.Response
 	if len(preview) > 200 {
 		preview = preview[:200] + "..."
 	}
 	gologger.Debug().Msgf("[%s] Response preview: %s", result.TemplateID, preview)
-	
+
 	// Parse from Response string
 	lines := strings.Split(result.Response, "\n")
 	if len(lines) > 0 {
 		firstLine := strings.TrimSpace(strings.TrimRight(lines[0], "\r"))
 		gologger.Debug().Msgf("[%s] First line: '%s'", result.TemplateID, firstLine)
-		
+
 		if strings.HasPrefix(firstLine, "HTTP/") {
 			parts := strings.Fields(firstLine)
 			gologger.Debug().Msgf("[%s] Parsed parts: %v", result.TemplateID, parts)
-			
+
 			if len(parts) >= 2 {
 				var code int
 				n, err := fmt.Sscanf(parts[1], "%d", &code)
@@ -498,7 +582,7 @@ func (ne *NucleiExecutor) extractStatusCode(result *output.ResultEvent, internal
 			gologger.Warning().Msgf("[%s] First line doesn't start with 'HTTP/': %s", result.TemplateID, firstLine)
 		}
 	}
-	
+
 	gologger.Warning().Msgf("[%s] ✗ Returning status code 0", result.TemplateID)
 	return 0
 }
@@ -523,33 +607,33 @@ func (ne *NucleiExecutor) extractWAFStatus(result *output.ResultEvent, internalE
 			}
 		}
 	}
-	
+
 	// Method 2: Try ResultEvent.Metadata (unlikely but check)
-	if result.Metadata == nil { 
-		return "" 
+	if result.Metadata == nil {
+		return ""
 	}
-	
+
 	// Nuclei converts headers to lowercase and replaces "-" with "_"
 	// So "X-WAF-Status" becomes "x_waf_status"
-	
+
 	// Method 1: Direct key (Nuclei format)
-	if s, ok := result.Metadata["x_waf_status"].(string); ok && s != "" { 
+	if s, ok := result.Metadata["x_waf_status"].(string); ok && s != "" {
 		gologger.Debug().Msgf("[%s] Found WAF status: %s", result.TemplateID, s)
-		return s 
+		return s
 	}
-	
+
 	// Method 2: Try alternative formats
-	if s, ok := result.Metadata["waf_status"].(string); ok && s != "" { 
-		return s 
+	if s, ok := result.Metadata["waf_status"].(string); ok && s != "" {
+		return s
 	}
-	
+
 	// Method 3: response_headers as http.Header (unlikely but check anyway)
-	if h, ok := result.Metadata["response_headers"].(http.Header); ok { 
+	if h, ok := result.Metadata["response_headers"].(http.Header); ok {
 		if val := h.Get("X-WAF-Status"); val != "" {
 			return val
 		}
 	}
-	
+
 	// Method 4: Scan all metadata keys case-insensitively
 	for key, value := range result.Metadata {
 		keyLower := strings.ToLower(strings.ReplaceAll(key, "-", "_"))
@@ -560,45 +644,51 @@ func (ne *NucleiExecutor) extractWAFStatus(result *output.ResultEvent, internalE
 			}
 		}
 	}
-	
+
 	// Debug: Log all metadata keys if we couldn't find the header
 	keys := make([]string, 0, len(result.Metadata))
 	for k := range result.Metadata {
 		keys = append(keys, k)
 	}
 	gologger.Debug().Msgf("[%s] WAF header not found. Available metadata keys: %v", result.TemplateID, keys)
-	
+
 	return ""
 }
 
 func (ne *NucleiExecutor) extractPayload(result *output.ResultEvent) string {
 	if result.Request != "" {
 		parts := strings.Fields(result.Request)
-		if len(parts) >= 2 { return parts[1] }
+		if len(parts) >= 2 {
+			return parts[1]
+		}
 		return result.Request
 	}
-	if result.Matched != "" { return result.Matched }
+	if result.Matched != "" {
+		return result.Matched
+	}
 	return ""
 }
 
 func (ne *NucleiExecutor) Close() error { return nil }
 
 type VoidWriter struct{}
-func (w *VoidWriter) Close() {}
-func (w *VoidWriter) Colorizer() aurora.Aurora { return nil }
-func (w *VoidWriter) Write(*output.ResultEvent) error { return nil }
-func (w *VoidWriter) WriteFailure(*output.InternalWrappedEvent) error { return nil }
-func (w *VoidWriter) Request(templateID, url, requestType string, err error) {}
-func (w *VoidWriter) RequestStatsLog(statusCode, response string) {}
+
+func (w *VoidWriter) Close()                                                              {}
+func (w *VoidWriter) Colorizer() aurora.Aurora                                            { return nil }
+func (w *VoidWriter) Write(*output.ResultEvent) error                                     { return nil }
+func (w *VoidWriter) WriteFailure(*output.InternalWrappedEvent) error                     { return nil }
+func (w *VoidWriter) Request(templateID, url, requestType string, err error)              {}
+func (w *VoidWriter) RequestStatsLog(statusCode, response string)                         {}
 func (w *VoidWriter) WriteStoreDebugData(host, templateID, eventType string, data string) {}
-func (w *VoidWriter) ResultCount() int { return 0 }
+func (w *VoidWriter) ResultCount() int                                                    { return 0 }
 
 type VoidProgress struct{}
-func (p *VoidProgress) Stop() {}
+
+func (p *VoidProgress) Stop()                                                    {}
 func (p *VoidProgress) Init(hostCount int64, rulesCount int, requestCount int64) {}
-func (p *VoidProgress) AddToTotal(delta int64) {}
-func (p *VoidProgress) IncrementRequests() {}
-func (p *VoidProgress) SetRequests(count uint64) {}
-func (p *VoidProgress) IncrementMatched() {}
-func (p *VoidProgress) IncrementErrorsBy(count int64) {}
-func (p *VoidProgress) IncrementFailedRequestsBy(count int64) {}
+func (p *VoidProgress) AddToTotal(delta int64)                                   {}
+func (p *VoidProgress) IncrementRequests()                                       {}
+func (p *VoidProgress) SetRequests(count uint64)                                 {}
+func (p *VoidProgress) IncrementMatched()                                        {}
+func (p *VoidProgress) IncrementErrorsBy(count int64)                            {}
+func (p *VoidProgress) IncrementFailedRequestsBy(count int64)                    {}

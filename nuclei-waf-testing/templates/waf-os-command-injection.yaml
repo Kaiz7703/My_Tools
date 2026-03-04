@@ -1,0 +1,54 @@
+id: waf-os-command-injection-testing
+info:
+  name: WAF Efficacy Testing - OS Command Injection (OS-Command-Fuzzing)
+  author: your-name
+  severity: info
+  description: Testing WAF capabilities against OS Command Injection using a comprehensive Fuzzing list. Covers Bash, PowerShell, Perl, and Windows cmd techniques.
+  tags: waf-test, os-command, command-injection, rce, fuzzing
+
+variables:
+  # The comprehensive list of OS Command Injection vectors
+  payload_list: ../payloads/os-command-injection.txt
+
+http:
+  - raw:
+      # Kiểu 1: Gài Command Injection trực tiếp vào Query String (Rẻ nhất, dễ tìm nhất)
+      - |+
+        GET /ping?host=127.0.0.1{{payloads}} HTTP/1.1
+        Host: {{Hostname}}
+        Accept: */*
+
+      # Kiểu 2: Bypass qua Referer và User-Agent (Lừa các hàm logging của server-side)
+      - |+
+        GET / HTTP/1.1
+        Host: {{Hostname}}
+        User-Agent: Mozilla/5.0 {{payloads}}
+        Referer: https://google.com/search?q={{payloads}}
+
+      # Kiểu 3: Đâm Command Injection qua Form POST urlencoded
+      - |+
+        POST /api/utilities/ping HTTP/1.1
+        Host: {{Hostname}}
+        Content-Type: application/x-www-form-urlencoded
+        
+        target=127.0.0.1&options={{payloads}}
+
+      # Kiểu 4: Nhồi vào JSON Body Node.js/Python Backend (VD: child_process.exec)
+      - |+
+        POST /api/exec HTTP/1.1
+        Host: {{Hostname}}
+        Content-Type: application/json
+        
+        {"command": "echo", "args": "{{payloads}}"}
+
+    payloads:
+      payloads:
+        - "{{payload_list}}"
+
+    attack: batteringram
+
+    matchers:
+      - type: word
+        part: header
+        words:
+          - "HTTP/"

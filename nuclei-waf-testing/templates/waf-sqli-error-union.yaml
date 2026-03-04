@@ -1,0 +1,45 @@
+id: waf-sqli-error-union-testing
+info:
+  name: WAF Efficacy Testing - SQLi (Error & Union Based)
+  author: your-name
+  severity: info
+  description: Sweeping massive chunks of Error-based and Union-based SQLi to detect WAF capability in parsing complex query manipulation.
+  tags: waf-test, sqli, error-based, union-based
+
+variables:
+  payload_list: ../payloads/sqli_error_union.txt
+
+http:
+  - raw:
+      # Kiểu 1: Lách qua URL Parameters (Tuyệt kỹ móc Database)
+      - |+
+        GET /product?id=1+{{payloads}} HTTP/1.1
+        Host: {{Hostname}}
+        Accept: */*
+
+      # Kiểu 2: Bypass thông qua Referer hoặc User Agent (Hay dính lỗi Error SQLi)
+      - |+
+        GET / HTTP/1.1
+        Host: {{Hostname}}
+        Referer: https://google.com/search?q={{payloads}}
+        User-Agent: Mozilla/5.0 {{payloads}}
+        
+      # Kiểu 3: Đâm Form x-www-form-urlencoded
+      - |+
+        POST /search HTTP/1.1
+        Host: {{Hostname}}
+        Content-Type: application/x-www-form-urlencoded
+        
+        query=apple&sort={{payloads}}
+
+    payloads:
+      payloads:
+        - "{{payload_list}}"
+
+    attack: batteringram
+
+    matchers:
+      - type: word
+        part: header
+        words:
+          - "HTTP/"

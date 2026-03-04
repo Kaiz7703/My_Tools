@@ -1,0 +1,44 @@
+id: waf-sqli-auth-bypass-testing
+info:
+  name: WAF Efficacy Testing - SQLi (Auth Bypass & Generic Fuzz)
+  author: your-name
+  severity: info
+  description: Testing WAF resilience against Login/Authentication bypass payloads, basic truth conditions, and query manipulators.
+  tags: waf-test, sqli, auth-bypass, fuzzing
+
+variables:
+  payload_list: ../payloads/sqli_auth_bypass.txt
+
+http:
+  - raw:
+      # Kiểu 1: Lách qua Form Đăng nhập trực tiếp (POST Body)
+      - |+
+        POST /login HTTP/1.1
+        Host: {{Hostname}}
+        Content-Type: application/x-www-form-urlencoded
+        
+        username={{payloads}}&password={{payloads}}
+
+      # Kiểu 2: Đâm vào Query Parameter
+      - |+
+        GET /admin?id={{payloads}}&role={{payloads}} HTTP/1.1
+        Host: {{Hostname}}
+        Accept: */*
+
+      # Kiểu 3: Đâm Cookie (Chỗ mà WAF rất hay bỏ qua filter SQLi)
+      - |+
+        GET / HTTP/1.1
+        Host: {{Hostname}}
+        Cookie: session_id={{payloads}}; role={{payloads}}
+
+    payloads:
+      payloads:
+        - "{{payload_list}}"
+
+    attack: batteringram
+
+    matchers:
+      - type: word
+        part: header
+        words:
+          - "HTTP/"

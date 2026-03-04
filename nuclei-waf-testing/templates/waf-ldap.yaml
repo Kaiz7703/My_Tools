@@ -1,0 +1,51 @@
+id: waf-ldap-testing
+info:
+  name: WAF Efficacy Testing - LDAP Injection
+  author: your-name
+  severity: info
+  description: Testing WAF resilience against LDAP injection syntax and malicious blind fuzzing structures.
+  tags: waf-test, ldap, fuzzing
+
+variables:
+  # Trỏ list để test query injection thông thường
+  payload_list: ../payloads/ldap_fuzz.txt
+  # Trỏ list đặc biệt dùng để fuzz/Dumb thuộc tính LDAP (chẳng hạn username=*)
+  attribute_list: ../payloads/ldap_attributes.txt
+
+http:
+  - raw:
+      # Kiểu 1: Gài LDAP Injection vào Query String (Thường ứng dụng dùng param để LDAP Search)
+      - |+
+        GET /directory?uid={{payloads}} HTTP/1.1
+        Host: {{Hostname}}
+        Accept: */*
+
+      # Kiểu 2: Bypass LDAP Filter trong Form Đăng nhập
+      - |+
+        POST /login HTTP/1.1
+        Host: {{Hostname}}
+        Content-Type: application/x-www-form-urlencoded
+        
+        user={{payloads}}&password=admin
+
+      # Kiểu 3: Tiêm trực tiếp LDAP Attribute để vét cạn thông tin Backend (Blind LDAP logic)
+      - |+
+        POST /search HTTP/1.1
+        Host: {{Hostname}}
+        Content-Type: application/json
+        
+        {"filter": "{{attributes}}=*"}
+
+    payloads:
+      payloads:
+        - "{{payload_list}}"
+      attributes:
+        - "{{attribute_list}}"
+
+    attack: cluster
+
+    matchers:
+      - type: word
+        part: header
+        words:
+          - "HTTP/"

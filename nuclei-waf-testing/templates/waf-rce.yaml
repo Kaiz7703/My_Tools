@@ -1,0 +1,48 @@
+id: waf-rce-testing
+info:
+  name: WAF Efficacy Testing - Remote Code Execution (OS Command Fuzzing)
+  author: your-name
+  severity: info
+  description: Sweeping massive chunks of RCE/OS Command Fuzzing payloads (over 100,000 permutations) to detect WAF capability in parsing complex encodings and shell execution environments.
+  tags: waf-test, rce, os-command, fuzzing
+
+variables:
+  # The massive 12.5MB payload file containing 100k+ RCE permutations
+  payload_list: ../payloads/rce_payloads.txt
+
+http:
+  - raw:
+      # Kiểu 1: Lách qua URL Parameters (Các endpoint dùng hàm exec, system)
+      - |+
+        GET /ping?ip=127.0.0.1{{payloads}} HTTP/1.1
+        Host: {{Hostname}}
+        Accept: */*
+
+      # Kiểu 2: Bypass thông qua HTTP Headers (User-Agent thường bị log và xử lý qua bash)
+      - |+
+        GET / HTTP/1.1
+        Host: {{Hostname}}
+        User-Agent: Mozilla/5.0 {{payloads}}
+        Referer: https://google.com/search?q={{payloads}}
+
+      # Kiểu 3: Đâm Form x-www-form-urlencoded
+      - |+
+        POST /api/exec HTTP/1.1
+        Host: {{Hostname}}
+        Content-Type: application/x-www-form-urlencoded
+        
+        command=help&args={{payloads}}
+
+    payloads:
+      payloads:
+        - "{{payload_list}}"
+
+    # Cảnh báo: Với hơn 100k payloads, mode cluster (độc lập từng request x 3) 
+    # sẽ sinh ra ~300.000 requests. Nhớ theo dõi server rớt mạng.
+    attack: batteringram
+
+    matchers:
+      - type: word
+        part: header
+        words:
+          - "HTTP/"

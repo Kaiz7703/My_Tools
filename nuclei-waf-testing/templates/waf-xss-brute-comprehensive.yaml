@@ -1,0 +1,39 @@
+id: waf-xss-brute-comprehensive-testing
+info:
+  name: WAF Efficacy Testing - XSS (Comprehensive Fuzzing)
+  author: your-name
+  severity: info
+  description: A massive battery of XSS vectors compiled from JHADDIX, Mario, RSnake, and others to exhaustively fuzz WAF sanitization and encoding filters.
+  tags: waf-test, xss, brute, fuzzing
+
+variables:
+  # This file contains the merged & deduplicated large XSS payload lists
+  payload_list: ../payloads/xss_brute_comprehensive.txt
+
+http:
+  - raw:
+      # Kiểu 1: Fuzzing Tham số truy vấn (URL)
+      - |+
+        GET /product?category=1&search={{payloads}} HTTP/1.1
+        Host: {{Hostname}}
+        Accept: text/html
+
+      # Kiểu 2: Đâm vào Form nhập liệu POST
+      - |+
+        POST /comment HTTP/1.1
+        Host: {{Hostname}}
+        Content-Type: application/x-www-form-urlencoded
+        
+        id=7&feedback={{payloads}}
+
+    payloads:
+      payloads:
+        - "{{payload_list}}"
+
+    attack: batteringram
+
+    matchers:
+      - type: word
+        part: header
+        words:
+          - "HTTP/"

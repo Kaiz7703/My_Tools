@@ -1,0 +1,49 @@
+id: waf-ssi-esi-testing
+info:
+  name: WAF Efficacy Testing - SSI and ESI Injection
+  author: your-name
+  severity: info
+  description: Testing WAF resilience against Server Side Includes (SSI) and Edge Side Includes (ESI) injection payloads.
+  tags: waf-test, ssi, esi, fuzzing
+
+variables:
+  # Trỏ tới kho đạn SSI/ESI của bạn
+  payload_list: ../payloads/ssi_esi.txt
+
+http:
+  - raw:
+      # Kiểu 1: Bắn SSI/ESI qua Query String (Nhắm vào nội dung trả về động)
+      - |+
+        GET /?page={{payloads}} HTTP/1.1
+        Host: {{Hostname}}
+        Accept: */*
+
+      # Kiểu 2: Bắn SSI/ESI qua Form Body (Thường bị cache server / proxy load)
+      - |+
+        POST /comment HTTP/1.1
+        Host: {{Hostname}}
+        Content-Type: application/x-www-form-urlencoded
+        
+        user=test&body={{payloads}}
+
+      # Kiểu 3: Đánh chặn luồng Load-Balancer/Cache bằng HTTP Headers (X-Forwarded-For, Cookie)
+      - |+
+        GET / HTTP/1.1
+        Host: {{Hostname}}
+        User-Agent: Mozilla/5.0
+        X-Forwarded-For: {{payloads}}
+        Cookie: session={{payloads}}
+        Accept: */*
+
+    payloads:
+      payloads:
+        - "{{payload_list}}" # Load danh mục ssi_esi.txt
+
+    attack: batteringram
+
+    # Dummy Matcher: Nhận diện mọi phản hồi để Nuclei Output thành JSON file 
+    matchers:
+      - type: word
+        part: header
+        words:
+          - "HTTP/"

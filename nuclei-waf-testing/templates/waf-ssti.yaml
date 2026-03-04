@@ -1,0 +1,52 @@
+id: waf-ssti-testing
+info:
+  name: WAF Efficacy Testing - Server-Side Template Injection
+  author: your-name
+  severity: info
+  description: Testing WAF resilience against SSTI payloads across headers, query parameters, and body.
+  tags: waf-test, ssti, fuzzing
+
+variables:
+  payload_list: ./payloads/ssti.txt
+
+http:
+  - raw:
+      # Request 1: Fuzzing in URL Query and HTTP Headers
+      - |+
+        GET /?query={{payloads}} HTTP/1.1
+        Host: {{Hostname}}
+        User-Agent: Mozilla/5.0 {{payloads}}
+        Referer: https://example.com/{{payloads}}
+        X-Forwarded-For: {{payloads}}
+        Accept: */*
+
+      # Request 2: Fuzzing in POST Form Data
+      - |+
+        POST /submit HTTP/1.1
+        Host: {{Hostname}}
+        Content-Type: application/x-www-form-urlencoded
+        
+        username=admin&data={{payloads}}
+
+      # Request 3: Fuzzing in POST JSON Data
+      - |+
+        POST /api/update HTTP/1.1
+        Host: {{Hostname}}
+        Content-Type: application/json
+        
+        {"search": "{{payloads}}", "filter": "1"}
+
+    payloads:
+      payloads:
+        - "{{payload_list}}"
+
+    # Attack mode 'batteringram' injects the same payload into all {{payloads}} positions simultaneously
+    attack: batteringram
+
+    # A dummy matcher is required by Nuclei to log the request/response.
+    # We match "HTTP/" in the header which is always present in a valid HTTP response.
+    matchers:
+      - type: word
+        part: header
+        words:
+          - "HTTP/"
