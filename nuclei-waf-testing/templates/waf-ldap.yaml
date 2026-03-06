@@ -42,7 +42,7 @@ http:
       attributes:
         - "{{attribute_list}}"
 
-    attack: cluster
+    attack: batteringram
 
     matchers:
       - type: word

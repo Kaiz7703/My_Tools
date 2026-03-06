@@ -8,7 +8,7 @@ info:
 
 variables:
   # Trỏ tới siêu kho đạn dược hợp nhất của bạn (Chứa cả Deep_Traversal, DotDotPwn và Directory_traversal)
-  payload_list: ../payloads/path_traversal.txt
+  payload_list: ../payloads/tiny_test.txt
 
 http:
   - raw:

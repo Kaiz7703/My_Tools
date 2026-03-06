@@ -8,7 +8,7 @@ info:
 
 variables:
   # Trỏ tới kho đạn CRLF của bạn
-  #payload_list: ../payloads/crlf.txt
+  payload_list: ../payloads/crlf.txt
 
 http:
   - raw:
@@ -37,7 +37,7 @@ http:
 
     payloads:
       payloads:
-        - "../payloads/crlf.txt" # Load danh mục crlf.txt
+        - "{{payload_list}}" # Load danh mục crlf.txt
 
     attack: batteringram
 

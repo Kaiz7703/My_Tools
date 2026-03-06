@@ -14,8 +14,8 @@ import (
 // CSVWriter writes WAF test results to CSV files
 type CSVWriter struct {
 	sync.Mutex
-	comprehensiveFile *os.File
-	bypassedFile      *os.File
+	comprehensiveFile   *os.File
+	bypassedFile        *os.File
 	comprehensiveWriter *csv.Writer
 	bypassedWriter      *csv.Writer
 	comprehensivePath   string
@@ -26,17 +26,17 @@ type CSVWriter struct {
 
 // WAFResult represents a single WAF test result
 type WAFResult struct {
-	TemplateID       string
-	TemplateName     string
-	Severity         string
-	TargetURL        string
-	Status           string // "Bypassed" or "Blocked"
-	HTTPStatusCode   int
-	WAFStatusHeader  string
-	Timestamp        time.Time
-	Payload          string
-	FlowIndex        int
-	TotalFlow        int
+	TemplateID      string
+	TemplateName    string
+	Severity        string
+	TargetURL       string
+	Status          string // "Bypassed" or "Blocked"
+	HTTPStatusCode  int
+	WAFStatusHeader string
+	Timestamp       time.Time
+	Payload         string
+	FlowIndex       int
+	TotalFlow       int
 }
 
 // NewCSVWriter creates a new CSV writer for WAF testing
@@ -177,6 +177,37 @@ func (w *CSVWriter) WriteMultiple(results []*WAFResult) error {
 			return err
 		}
 	}
+	return nil
+}
+
+// Flush explicitly flushes any buffered data to the underlying io.Writer
+func (w *CSVWriter) Flush() error {
+	w.Lock()
+	defer w.Unlock()
+
+	w.comprehensiveWriter.Flush()
+	w.bypassedWriter.Flush()
+
+	var errs []error
+	if err := w.comprehensiveWriter.Error(); err != nil {
+		errs = append(errs, errors.Wrap(err, "comprehensive writer flush error"))
+	}
+	if err := w.bypassedWriter.Error(); err != nil {
+		errs = append(errs, errors.Wrap(err, "bypassed writer flush error"))
+	}
+
+	if len(errs) > 0 {
+		return errors.Errorf("errors flushing CSV writer: %v", errs)
+	}
+
+	// We also optionally Sync the file descriptior to disk immediately
+	if w.comprehensiveFile != nil {
+		w.comprehensiveFile.Sync()
+	}
+	if w.bypassedFile != nil {
+		w.bypassedFile.Sync()
+	}
+
 	return nil
 }
 

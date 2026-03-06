@@ -133,279 +133,329 @@ func (ne *NucleiExecutor) Execute(ctx context.Context, templatePath string) (ret
 		return nil
 	}
 
-	modBytes, err := ne.preprocessTemplate(rawBytes, templatePath)
+	modBytesList, err := ne.preprocessTemplate(rawBytes, templatePath)
 	if err != nil {
 		gologger.Warning().Msgf("[%s] Failed to preprocess: %v", templateID, err)
-		modBytes = rawBytes
+		modBytesList = [][]byte{rawBytes} // Fallback to raw bytes
 	}
 
-	// Create temp file
-	tmpFile, err := os.CreateTemp(filepath.Dir(templatePath), "waf-test-*.yaml")
-	if err != nil {
-		ne.stateManager.RecordFailed(templateID, fmt.Sprintf("temp file error: %v", err))
-		return nil
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.Write(modBytes); err != nil {
-		tmpFile.Close()
-		ne.stateManager.RecordFailed(templateID, fmt.Sprintf("write error: %v", err))
-		return nil
-	}
-	tmpFile.Close()
-
-	// Parse template
-	template, err := templates.Parse(tmpFile.Name(), nil, ne.executorOpts)
-	if err != nil {
-		// Check if interactsh-related error
-		if strings.Contains(err.Error(), "interactsh") ||
-			strings.Contains(err.Error(), "oast") ||
-			strings.Contains(err.Error(), "unresolved variables") {
-			gologger.Debug().Msgf("[%s] Skipping: requires interactsh", templateID)
-			ne.stateManager.RecordSkipped(templateID, "requires interactsh")
-			return nil
+	for chunkIdx, modBytes := range modBytesList {
+		// Log chunk progress if there are multiple chunks
+		if len(modBytesList) > 1 {
+			gologger.Info().Msgf("[%s] Processing chunk %d/%d...", templateID, chunkIdx+1, len(modBytesList))
 		}
 
-		gologger.Warning().Msgf("[%s] Parse error: %v", templateID, err)
-		ne.stateManager.RecordFailed(templateID, fmt.Sprintf("parse error: %v", err))
-		return nil
-	}
-	template.Path = templatePath
+		// Create temp file for this chunk
+		tmpFile, err := os.CreateTemp(filepath.Dir(templatePath), "waf-test-*.yaml")
+		if err != nil {
+			ne.stateManager.RecordFailed(templateID, fmt.Sprintf("temp file error: %v", err))
+			continue
+		}
 
-	if template == nil {
-		return nil
-	}
+		if _, err := tmpFile.Write(modBytes); err != nil {
+			tmpFile.Close()
+			os.Remove(tmpFile.Name())
+			ne.stateManager.RecordFailed(templateID, fmt.Sprintf("write error: %v", err))
+			continue
+		}
+		tmpFile.Close()
 
-	// Create scan context
-	metaInput := contextargs.NewMetaInput()
-	metaInput.Input = ne.target
+		// Parse template
+		template, err := templates.Parse(tmpFile.Name(), nil, ne.executorOpts)
+		if err != nil {
+			os.Remove(tmpFile.Name())
+			// Check if interactsh-related error
+			if strings.Contains(err.Error(), "interactsh") ||
+				strings.Contains(err.Error(), "oast") ||
+				strings.Contains(err.Error(), "unresolved variables") {
+				gologger.Debug().Msgf("[%s] Skipping: requires interactsh", templateID)
+				ne.stateManager.RecordSkipped(templateID, "requires interactsh")
+				continue
+			}
 
-	// Debug: Log what we're passing to template
-	gologger.Debug().Msgf("[%s] Setting target for template: %s", template.ID, ne.target)
-	gologger.Debug().Msgf("[%s] Template will receive {{Hostname}} = %s", template.ID, ne.target)
+			gologger.Warning().Msgf("[%s] Parse error: %v", templateID, err)
+			ne.stateManager.RecordFailed(templateID, fmt.Sprintf("parse error: %v", err))
+			continue
+		}
+		template.Path = templatePath
 
-	ctxArgs := contextargs.New(ctx)
-	ctxArgs.MetaInput = metaInput
-	scanCtx := scan.NewScanContext(ctx, ctxArgs)
+		if template == nil {
+			os.Remove(tmpFile.Name())
+			continue
+		}
 
-	// Callback for Flow results (deprecated if we flatten, but good for backup)
-	var flowResults []*output.ResultEvent
-	var internalEvents []*output.InternalWrappedEvent // Store InternalEvents for status code extraction
+		// Create scan context for this specific chunk run
+		metaInput := contextargs.NewMetaInput()
+		metaInput.Input = ne.target
 
-	scanCtx.OnResult = func(event *output.InternalWrappedEvent) {
-		if event != nil {
-			// Store the InternalEvent for later processing
-			internalEvents = append(internalEvents, event)
+		ctxArgs := contextargs.New(ctx)
+		ctxArgs.MetaInput = metaInput
+		scanCtx := scan.NewScanContext(ctx, ctxArgs)
 
-			if event.Results != nil {
-				flowResults = append(flowResults, event.Results...)
+		var flowResults []*output.ResultEvent
+		var internalEvents []*output.InternalWrappedEvent
+
+		scanCtx.OnResult = func(event *output.InternalWrappedEvent) {
+			if event != nil {
+				internalEvents = append(internalEvents, event)
+				if event.Results != nil {
+					flowResults = append(flowResults, event.Results...)
+				}
 			}
 		}
-	}
 
-	// Execute
-	gologger.Info().Msgf("[%s] Executing template (Flattened)...", template.ID)
-	results, err := template.Executer.ExecuteWithResults(scanCtx)
-	// Ignore execution errors to process partial results
+		// Execute
+		gologger.Info().Msgf("[%s] Executing template chunk %d (Batched)...", template.ID, chunkIdx+1)
+		results, err := template.Executer.ExecuteWithResults(scanCtx)
+		if err != nil {
+			gologger.Warning().Msgf("[%s] Execution error: %v", template.ID, err)
+		}
 
-	// Deduplication Logic
-	uniqueResults := make(map[string]*output.ResultEvent)
-	genKey := func(r *output.ResultEvent) string {
-		// Use Request URL + Timestamp + TemplateID + Matcher Status?
-		// Simply ID + Matched + Time is mostly unique enough.
-		// Use composite key including Timestamp.UnixNano()
-		return fmt.Sprintf("%s|%s|%d", r.TemplateID, r.Matched, r.Timestamp.UnixNano())
-	}
+		// Deduplication Logic
+		uniqueResults := make(map[string]*output.ResultEvent)
+		genKey := func(r *output.ResultEvent) string {
+			return fmt.Sprintf("%s|%s|%d", r.TemplateID, r.Matched, r.Timestamp.UnixNano())
+		}
 
-	for _, r := range results {
-		uniqueResults[genKey(r)] = r
-	}
-	for _, r := range flowResults {
-		uniqueResults[genKey(r)] = r
-	}
+		for _, r := range results {
+			uniqueResults[genKey(r)] = r
+		}
+		for _, r := range flowResults {
+			uniqueResults[genKey(r)] = r
+		}
 
-	finalResults := make([]*output.ResultEvent, 0, len(uniqueResults))
-	for _, r := range uniqueResults {
-		finalResults = append(finalResults, r)
-	}
-	results = finalResults
+		finalResults := make([]*output.ResultEvent, 0, len(uniqueResults))
+		for _, r := range uniqueResults {
+			finalResults = append(finalResults, r)
+		}
+		results = finalResults
 
-	gologger.Debug().Msgf("[%s] Got %d unique results, %d internal events", template.ID, len(results), len(internalEvents))
+		gologger.Debug().Msgf("[%s] Got %d unique results, %d internal events", template.ID, len(results), len(internalEvents))
 
-	// Create a map to enrich ResultEvents with InternalEvent data
-	enrichmentMap := make(map[string]map[string]interface{})
-	for _, ie := range internalEvents {
-		if ie.InternalEvent != nil {
-			key := fmt.Sprintf("%s|%s", template.ID, ie.InternalEvent["matched"])
-			enrichmentMap[key] = ie.InternalEvent
+		// Create enrichment map
+		enrichmentMap := make(map[string]map[string]interface{})
+		for _, ie := range internalEvents {
+			if ie.InternalEvent != nil {
+				key := fmt.Sprintf("%s|%s", template.ID, ie.InternalEvent["matched"])
+				enrichmentMap[key] = ie.InternalEvent
+			}
+		}
+
+		// Processing
+		if len(results) == 0 {
+			gologger.Debug().Msgf("[%s] No results found, generating synthetic blocked result", template.ID)
+			syntheticResult := &output.ResultEvent{
+				TemplateID: template.ID,
+				Info:       template.Info,
+				Matched:    ne.target,
+				Timestamp:  time.Now(),
+				Metadata:   map[string]interface{}{"status_code": 403, "synthetic_result": true},
+			}
+			ne.processResult(syntheticResult, 1, 1, nil)
+		} else {
+			total := len(results)
+			for i, result := range results {
+				key := fmt.Sprintf("%s|%s", result.TemplateID, result.Matched)
+				internalEvent := enrichmentMap[key]
+				ne.processResult(result, i+1, total, internalEvent)
+			}
+		}
+
+		// Cleanup temp file after we are done executing the chunk
+		os.Remove(tmpFile.Name())
+
+		// Explicitly flush to disk after all results for this chunk are processed
+		if err := ne.csvWriter.Flush(); err != nil {
+			gologger.Warning().Msgf("[%s] Failed to explicitly flush CSV writer: %v", templateID, err)
 		}
 	}
 
-	// Processing
-	if len(results) == 0 {
-		gologger.Debug().Msgf("[%s] No results found, generating synthetic blocked result", template.ID)
-		syntheticResult := &output.ResultEvent{
-			TemplateID: template.ID,
-			Info:       template.Info,
-			Matched:    ne.target,
-			Timestamp:  time.Now(),
-			Metadata:   map[string]interface{}{"status_code": 403, "synthetic_result": true},
-		}
-		ne.processResult(syntheticResult, 1, 1, nil)
-		// Finalize template stats for synthetic result
-		ne.stateManager.FinalizeTemplate(template.ID)
-	} else {
-		total := len(results)
-		for i, result := range results {
-			gologger.Debug().Msgf("[%s] Processing result %d/%d", template.ID, i+1, total)
-
-			// Try to find matching InternalEvent for enrichment
-			key := fmt.Sprintf("%s|%s", result.TemplateID, result.Matched)
-			internalEvent := enrichmentMap[key]
-
-			ne.processResult(result, i+1, total, internalEvent)
-		}
-
-		// Finalize template stats after processing all results
-		ne.stateManager.FinalizeTemplate(template.ID)
+	// Final explicit flush to make absolutely sure any lingering buffers in CSV are written
+	if err := ne.csvWriter.Flush(); err != nil {
+		gologger.Warning().Msgf("[%s] Failed to explicitly flush CSV writer: %v", templateID, err)
 	}
+
+	// Finalize template stats for this batched template run (across all chunks)
+	ne.stateManager.FinalizeTemplate(templateID)
 
 	return nil
 }
 
-// preprocessTemplate removes Flow logic and injects catch-all matchers
-func (ne *NucleiExecutor) preprocessTemplate(data []byte, templatePath string) ([]byte, error) {
-	var tpl map[string]interface{}
-	if err := yaml.Unmarshal(data, &tpl); err != nil {
+// preprocessTemplate removes Flow logic and dynamically splits payload lists if they are large,
+// returning an array of modified template bytes (one for each split payload chunk).
+func (ne *NucleiExecutor) preprocessTemplate(data []byte, templatePath string) ([][]byte, error) {
+	var baseTpl map[string]interface{}
+	if err := yaml.Unmarshal(data, &baseTpl); err != nil {
 		return nil, err
 	}
 
 	// 1. Remove 'flow' key to standardise execution as sequential HTTP requests
-	delete(tpl, "flow")
+	delete(baseTpl, "flow")
 	// Ensure we don't stop early
-	tpl["stop-at-first-match"] = false
+	baseTpl["stop-at-first-match"] = false
 
-	// Helper to resolve and embed payload lists directly into memory
-	readPayloadFile := func(path string) ([]string, bool) {
-		absPath := path
-		if !filepath.IsAbs(path) {
-			absPath = filepath.Join(filepath.Dir(templatePath), path)
+	// Helper to resolve payload paths and return them as an absolute file path
+	resolvePayloadPath := func(path string) string {
+		if filepath.IsAbs(path) {
+			return path
 		}
-
-		if _, err := os.Stat(absPath); os.IsNotExist(err) {
-			return nil, false
-		}
-
-		fileData, err := os.ReadFile(absPath)
-		if err != nil {
-			return nil, false
-		}
-
-		lines := strings.Split(string(fileData), "\n")
-		var validLines []string
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line != "" {
-				validLines = append(validLines, line)
-			}
-		}
-
-		gologger.Info().Msgf("[%s] Extracted %d payloads from %s and embedded directly into template memory", filepath.Base(templatePath), len(validLines), filepath.Base(absPath))
-		return validLines, true
+		return filepath.Join(filepath.Dir(templatePath), path)
 	}
 
-	// Cache variables for lookup
-	varMapCache := make(map[string]interface{})
-	if vars, ok := tpl["variables"]; ok {
+	// Find payload variables and split them if necessary
+	var resolvedVarPaths []string
+	var targetVarName string
+
+	if vars, ok := baseTpl["variables"]; ok {
 		if varsMap, ok := vars.(map[interface{}]interface{}); ok {
 			for k, v := range varsMap {
-				if ks, ok := k.(string); ok {
-					varMapCache[ks] = v
+				if strVal, ok := v.(string); ok && (strings.HasSuffix(strVal, ".txt") || strings.Contains(strVal, "/payloads/")) {
+					resolvedPath := resolvePayloadPath(strVal)
+					// Arbitrary limit: 5000 payloads per batched execution to protect RAM
+					chunks, err := SplitPayloadFile(resolvedPath, 1500)
+					if err != nil {
+						gologger.Warning().Msgf("[%s] Failed to split payload file %s: %v", filepath.Base(templatePath), resolvedPath, err)
+						chunks = []string{resolvedPath} // Fallback to original
+					} else if len(chunks) > 1 {
+						gologger.Info().Msgf("[%s] Dynamically split massive payload file %s into %d chunks of ~5000 items each.", filepath.Base(templatePath), resolvedPath, len(chunks))
+					}
+
+					// We currently support splitting only ONE massive variable per template effectively
+					targetVarName = k.(string)
+					resolvedVarPaths = chunks
+					break // Only split the first payload variable found
 				}
 			}
 		}
 	}
 
-	// 2. Inject Catch-All Matchers & Embed Payloads
-	injectFn := func(requests []interface{}) {
-		for _, req := range requests {
-			if reqMap, ok := req.(map[interface{}]interface{}); ok {
-				// Remove existing matchers to avoid noise
-				delete(reqMap, "matchers")
-				delete(reqMap, "matchers-condition")
+	// If no payload variables were found, process normally with 1 chunk
+	if len(resolvedVarPaths) == 0 {
+		resolvedVarPaths = append(resolvedVarPaths, "")
+	}
 
-				// Inject permissive matcher: DSL true
-				trueMatcher := map[interface{}]interface{}{
-					"type": "dsl",
-					"dsl":  []interface{}{"true"},
-					"name": "force-log",
+	var resultingTemplates [][]byte
+
+	for _, chunkPath := range resolvedVarPaths {
+		// Deep copy the base template for this chunk using YAML marshal/unmarshal
+		var tpl map[string]interface{}
+		tmpBytes, _ := yaml.Marshal(baseTpl)
+		yaml.Unmarshal(tmpBytes, &tpl)
+
+		varMapCache := make(map[string]interface{})
+
+		// Re-inject the specific chunk path into the variables
+		if vars, ok := tpl["variables"]; ok {
+			if varsMap, ok := vars.(map[interface{}]interface{}); ok {
+				for k, v := range varsMap {
+					if ks, ok := k.(string); ok {
+						if ks == targetVarName && chunkPath != "" {
+							varsMap[k] = chunkPath
+							varMapCache[ks] = chunkPath
+						} else if strVal, ok := v.(string); ok && (strings.HasSuffix(strVal, ".txt") || strings.Contains(strVal, "/payloads/")) {
+							// For secondary payload files not split, just resolve them
+							resolvedPath := resolvePayloadPath(strVal)
+							varsMap[k] = resolvedPath
+							varMapCache[ks] = resolvedPath
+						} else {
+							varMapCache[ks] = v
+						}
+					}
 				}
-				reqMap["matchers"] = []interface{}{trueMatcher}
-				reqMap["stop-at-first-match"] = false
+			}
+		}
 
-				// Detect and embed payload files
-				if p, ok := reqMap["payloads"]; ok {
-					if payloadsMap, ok := p.(map[interface{}]interface{}); ok {
-						for k, v := range payloadsMap {
-							processStrPayload := func(strVal string) interface{} {
-								if strings.HasPrefix(strVal, "{{") && strings.HasSuffix(strVal, "}}") {
-									varName := strings.TrimSuffix(strings.TrimPrefix(strVal, "{{"), "}}")
-									if fileRef, exists := varMapCache[varName].(string); exists {
-										if lines, ok := readPayloadFile(fileRef); ok {
-											return lines
-										}
-									}
-								} else {
-									// Direct path matching .txt
-									if strings.HasSuffix(strVal, ".txt") || strings.Contains(strVal, "/payloads/") {
-										if lines, ok := readPayloadFile(strVal); ok {
-											return lines
-										}
-									}
-								}
-								return strVal
-							}
+		// 2. Inject Catch-All Matchers & Clean Payloads
+		injectFn := func(requests []interface{}) {
+			for _, req := range requests {
+				if reqMap, ok := req.(map[interface{}]interface{}); ok {
+					// Remove existing matchers to avoid noise
+					delete(reqMap, "matchers")
+					delete(reqMap, "matchers-condition")
 
-							if strVal, isStr := v.(string); isStr {
-								payloadsMap[k] = processStrPayload(strVal)
-							} else if arrVal, isArr := v.([]interface{}); isArr {
-								var newArr []interface{}
-								for _, item := range arrVal {
-									if strItem, isItemStr := item.(string); isItemStr {
-										res := processStrPayload(strItem)
-										if lines, isSlice := res.([]string); isSlice {
-											for _, l := range lines {
-												newArr = append(newArr, l)
+					// Inject permissive matcher: DSL true
+					trueMatcher := map[interface{}]interface{}{
+						"type": "dsl",
+						"dsl":  []interface{}{"true"},
+						"name": "force-log",
+					}
+					reqMap["matchers"] = []interface{}{trueMatcher}
+					reqMap["stop-at-first-match"] = false
+
+					// Evaluate payloads block
+					if p, ok := reqMap["payloads"]; ok {
+						if payloadsMap, ok := p.(map[interface{}]interface{}); ok {
+							for k, v := range payloadsMap {
+
+								// Check if the payload value is a slice/array
+								if arrVal, isArr := v.([]interface{}); isArr {
+									// Flatten single-item arrays that are variables or strings back into a flat string so `load.go` reads it as a file
+									if len(arrVal) == 1 {
+										if strItem, isItemStr := arrVal[0].(string); isItemStr {
+											// If it's a variable reference, extract the var name and see if it's in our cache
+											if strings.HasPrefix(strItem, "{{") && strings.HasSuffix(strItem, "}}") {
+												varName := strings.TrimSuffix(strings.TrimPrefix(strItem, "{{"), "}}")
+												if resolvedVarPath, exists := varMapCache[varName].(string); exists && strings.HasSuffix(resolvedVarPath, ".txt") {
+													// CRITICAL: Must assign as pure Go string type to trigger 'case string' in Nuclei's load.go
+													payloadsMap[k] = string(resolvedVarPath)
+													gologger.Info().Msgf("[%s] Flattened payload array %s using cached variable path: %s", filepath.Base(templatePath), k, resolvedVarPath)
+													continue
+												}
+											} else if !strings.Contains(strItem, "\n") { // if it's a flat string without newlines it might be a direct path
+												resolvedDirectPath := resolvePayloadPath(strItem)
+												payloadsMap[k] = string(resolvedDirectPath)
+												gologger.Info().Msgf("[%s] Flattened payload array %s to direct file path: %s", filepath.Base(templatePath), k, resolvedDirectPath)
+												continue
 											}
-										} else {
-											newArr = append(newArr, strItem)
 										}
-									} else {
-										newArr = append(newArr, item)
 									}
+
+									// If it couldn't be flattened or is a multi-item array, we must leave it alone or resolve items
+									for i, item := range arrVal {
+										if strItem, isItemStr := item.(string); isItemStr {
+											if !strings.HasPrefix(strItem, "{{") {
+												arrVal[i] = resolvePayloadPath(strItem)
+											}
+										}
+									}
+									payloadsMap[k] = arrVal
+
+								} else if strVal, isStr := v.(string); isStr {
+									// If it's already a single string, just resolve the path
+									payloadsMap[k] = string(resolvePayloadPath(strVal))
+									gologger.Debug().Msgf("[%s] Resolved payload string %s to: %s", filepath.Base(templatePath), k, payloadsMap[k])
 								}
-								payloadsMap[k] = newArr
 							}
 						}
 					}
 				}
 			}
 		}
-	}
 
-	if val, ok := tpl["http"]; ok {
-		if requests, ok := val.([]interface{}); ok {
-			injectFn(requests)
+		if val, ok := tpl["http"]; ok {
+			if requests, ok := val.([]interface{}); ok {
+				injectFn(requests)
+			}
+		}
+		if val, ok := tpl["requests"]; ok {
+			if requests, ok := val.([]interface{}); ok {
+				injectFn(requests)
+			}
+		}
+
+		bytes, err := yaml.Marshal(tpl)
+		if err == nil {
+			resultingTemplates = append(resultingTemplates, bytes)
+		} else {
+			gologger.Warning().Msgf("[%s] YAML Marshal error on sub-template chunk: %v", filepath.Base(templatePath), err)
 		}
 	}
-	if val, ok := tpl["requests"]; ok {
-		if requests, ok := val.([]interface{}); ok {
-			injectFn(requests)
-		}
+
+	if len(resultingTemplates) == 0 {
+		return nil, fmt.Errorf("failed to generate any template chunks")
 	}
 
-	bytes, err := yaml.Marshal(tpl)
-	return bytes, err
+	return resultingTemplates, nil
 }
 
 // processResult processes a single Nuclei result event
