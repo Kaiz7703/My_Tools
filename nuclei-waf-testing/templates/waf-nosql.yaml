@@ -47,6 +47,7 @@ http:
     # mode 'batteringram' giúp chèn payload vào hàng loạt vị trí {{payloads}} trên từng Request
     attack: batteringram
 
+    unsafe: true
     matchers:
       - type: word
         part: header

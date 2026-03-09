@@ -44,6 +44,7 @@ http:
 
     attack: batteringram
 
+    unsafe: true
     matchers:
       - type: word
         part: header

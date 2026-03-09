@@ -42,6 +42,7 @@ http:
     attack: batteringram
 
     # Dummy Matcher: Nhận diện mọi phản hồi để Nuclei Output thành JSON file 
+    unsafe: true
     matchers:
       - type: word
         part: header

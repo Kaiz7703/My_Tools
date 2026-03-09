@@ -7,7 +7,7 @@ info:
   tags: waf-test, ssti, fuzzing
 
 variables:
-  payload_list: ./payloads/ssti.txt
+  payload_list: ../payloads/ssti.txt
 
 http:
   - raw:
@@ -45,6 +45,7 @@ http:
 
     # A dummy matcher is required by Nuclei to log the request/response.
     # We match "HTTP/" in the header which is always present in a valid HTTP response.
+    unsafe: true
     matchers:
       - type: word
         part: header

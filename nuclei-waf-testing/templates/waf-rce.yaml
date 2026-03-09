@@ -41,6 +41,7 @@ http:
     # sẽ sinh ra ~300.000 requests. Nhớ theo dõi server rớt mạng.
     attack: batteringram
 
+    unsafe: true
     matchers:
       - type: word
         part: header
