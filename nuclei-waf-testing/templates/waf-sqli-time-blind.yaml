@@ -11,19 +11,16 @@ variables:
 
 http:
   - raw:
-      # Kiểu 1: Gài Delay vào URL Parameters
       - |+
         GET /api/users?id=1'{{payloads}} HTTP/1.1
         Host: {{Hostname}}
         Accept: */*
 
-      # Kiểu 2: Bypass Delay qua Header X-Forwarded-For (Lỗi kinh điển khi Web Server Log IP)
       - |+
         GET / HTTP/1.1
         Host: {{Hostname}}
         X-Forwarded-For: 127.0.0.1'{{payloads}}
         
-      # Kiểu 3: Đâm Form x-www-form-urlencoded (Trường username thường bị inject Time-based)
       - |+
         POST /login HTTP/1.1
         Host: {{Hostname}}

@@ -11,20 +11,17 @@ variables:
 
 http:
   - raw:
-      # Kiểu 1: Gài NoSQL Payload qua Query Parameters (Cổ điển)
       - |+
         GET /search?q={{payloads}}&id={{payloads}} HTTP/1.1
         Host: {{Hostname}}
         Accept: application/json
 
-      # Kiểu 2: Bypass WAF qua HTTP Headers (đập thẳng vào NodeJS Logging Backend)
       - |+
         GET / HTTP/1.1
         Host: {{Hostname}}
         User-Agent: {{payloads}}
         X-Forwarded-For: {{payloads}}
 
-      # Kiểu 3: Đâm Form x-www-form-urlencoded
       - |+
         POST /login HTTP/1.1
         Host: {{Hostname}}
@@ -32,7 +29,6 @@ http:
         
         username=admin&password={{payloads}}
 
-      # Kiểu 4: Sát thủ của NoSQL - JSON Body đục khoét (GraphQL/ExpressJS)
       - |+
         POST /api/v1/auth HTTP/1.1
         Host: {{Hostname}}
@@ -42,9 +38,8 @@ http:
 
     payloads:
       payloads:
-        - "{{payload_list}}" # Load danh sách nosql.txt đã được lọc trùng
+        - "{{payload_list}}"
 
-    # mode 'batteringram' giúp chèn payload vào hàng loạt vị trí {{payloads}} trên từng Request
     attack: batteringram
 
     unsafe: true

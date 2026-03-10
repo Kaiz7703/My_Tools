@@ -7,18 +7,15 @@ info:
   tags: waf-test, ssi, esi, fuzzing
 
 variables:
-  # Trỏ tới kho đạn SSI/ESI của bạn
   payload_list: ../payloads/ssi_esi.txt
 
 http:
   - raw:
-      # Kiểu 1: Bắn SSI/ESI qua Query String (Nhắm vào nội dung trả về động)
       - |+
         GET /?page={{payloads}} HTTP/1.1
         Host: {{Hostname}}
         Accept: */*
 
-      # Kiểu 2: Bắn SSI/ESI qua Form Body (Thường bị cache server / proxy load)
       - |+
         POST /comment HTTP/1.1
         Host: {{Hostname}}
@@ -26,7 +23,6 @@ http:
         
         user=test&body={{payloads}}
 
-      # Kiểu 3: Đánh chặn luồng Load-Balancer/Cache bằng HTTP Headers (X-Forwarded-For, Cookie)
       - |+
         GET / HTTP/1.1
         Host: {{Hostname}}
@@ -37,11 +33,10 @@ http:
 
     payloads:
       payloads:
-        - "{{payload_list}}" # Load danh mục ssi_esi.txt
+        - "{{payload_list}}"
 
     attack: batteringram
 
-    # Dummy Matcher: Nhận diện mọi phản hồi để Nuclei Output thành JSON file 
     unsafe: true
     matchers:
       - type: word

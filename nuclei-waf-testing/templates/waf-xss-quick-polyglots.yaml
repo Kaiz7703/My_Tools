@@ -11,13 +11,11 @@ variables:
 
 http:
   - raw:
-      # Kiểu 1: Gài XSS vào tham số tìm kiếm, URL path (Reflected XSS cơ bản)
       - |+
         GET /search?q={{payloads}} HTTP/1.1
         Host: {{Hostname}}
         Accept: text/html
 
-      # Kiểu 2: Đâm vào Form nhập liệu (Lừa Stored XSS)
       - |+
         POST /contact HTTP/1.1
         Host: {{Hostname}}
@@ -25,7 +23,6 @@ http:
         
         name=guest&message={{payloads}}
 
-      # Kiểu 3: Đâm qua Header (Đánh lừa hệ thống Log hoặc trang Admin Relect XSS)
       - |+
         GET / HTTP/1.1
         Host: {{Hostname}}

@@ -11,7 +11,6 @@ variables:
 
 http:
   - raw:
-      # Request 1: Fuzzing in URL Query and HTTP Headers
       - |+
         GET /?query={{payloads}} HTTP/1.1
         Host: {{Hostname}}
@@ -20,7 +19,6 @@ http:
         X-Forwarded-For: {{payloads}}
         Accept: */*
 
-      # Request 2: Fuzzing in POST Form Data
       - |+
         POST /submit HTTP/1.1
         Host: {{Hostname}}
@@ -28,7 +26,6 @@ http:
         
         username=admin&data={{payloads}}
 
-      # Request 3: Fuzzing in POST JSON Data
       - |+
         POST /api/update HTTP/1.1
         Host: {{Hostname}}
@@ -40,11 +37,8 @@ http:
       payloads:
         - "{{payload_list}}"
 
-    # Attack mode 'batteringram' injects the same payload into all {{payloads}} positions simultaneously
     attack: batteringram
 
-    # A dummy matcher is required by Nuclei to log the request/response.
-    # We match "HTTP/" in the header which is always present in a valid HTTP response.
     unsafe: true
     matchers:
       - type: word

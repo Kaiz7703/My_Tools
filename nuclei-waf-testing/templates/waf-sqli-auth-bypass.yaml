@@ -11,7 +11,6 @@ variables:
 
 http:
   - raw:
-      # Kiểu 1: Lách qua Form Đăng nhập trực tiếp (POST Body)
       - |+
         POST /login HTTP/1.1
         Host: {{Hostname}}
@@ -19,13 +18,11 @@ http:
         
         username={{payloads}}&password={{payloads}}
 
-      # Kiểu 2: Đâm vào Query Parameter
       - |+
         GET /admin?id={{payloads}}&role={{payloads}} HTTP/1.1
         Host: {{Hostname}}
         Accept: */*
 
-      # Kiểu 3: Đâm Cookie (Chỗ mà WAF rất hay bỏ qua filter SQLi)
       - |+
         GET / HTTP/1.1
         Host: {{Hostname}}

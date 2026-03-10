@@ -11,20 +11,17 @@ variables:
 
 http:
   - raw:
-      # Kiểu 1: Lách qua URL Parameters (Tuyệt kỹ móc Database)
       - |+
         GET /product?id=1+{{payloads}} HTTP/1.1
         Host: {{Hostname}}
         Accept: */*
 
-      # Kiểu 2: Bypass thông qua Referer hoặc User Agent (Hay dính lỗi Error SQLi)
       - |+
         GET / HTTP/1.1
         Host: {{Hostname}}
         Referer: https://google.com/search?q={{payloads}}
         User-Agent: Mozilla/5.0 {{payloads}}
         
-      # Kiểu 3: Đâm Form x-www-form-urlencoded
       - |+
         POST /search HTTP/1.1
         Host: {{Hostname}}
