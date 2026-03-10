@@ -8,7 +8,7 @@ info:
 
 variables:
   # Trỏ tới kho đạn CRLF của bạn
-  payload_list: ../payloads/crlf.txt
+  payload_list: ../payloads/crlf_encoded.txt
 
 http:
   - raw:
@@ -25,19 +25,10 @@ http:
         Host: {{Hostname}}
         Accept: */*
 
-      # Kiểu 3: Fuzzing CRLF qua HTTP Headers truyền thống 
-      # (CRLF nhắm vào Referer, User-Agent để đục thủng ghi log)
-      - |+
-        GET / HTTP/1.1
-        Host: {{Hostname}}
-        User-Agent: Mozilla/5.0 {{payloads}}
-        Referer: https://example.com/{{payloads}}
-        X-Forwarded-For: {{payloads}}
-        Accept: */*
 
     payloads:
       payloads:
-        - "{{payload_list}}" # Load danh mục crlf.txt
+        - "{{payload_list}}" # Load danh mục crlf_encoded.txt
 
     attack: batteringram
 
