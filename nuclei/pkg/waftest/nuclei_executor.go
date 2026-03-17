@@ -24,6 +24,12 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+// templateMetaEntry caches name/severity per template for use in summary reporting
+type templateMetaEntry struct {
+	name     string
+	severity string
+}
+
 // NucleiExecutor executes templates using real Nuclei engine
 type NucleiExecutor struct {
 	target          string
@@ -35,6 +41,7 @@ type NucleiExecutor struct {
 	csvWriter       *output.CSVWriter
 	stateManager    *StateManager
 	detailedVerbose bool // Print full request/response details
+	templateMeta    map[string]*templateMetaEntry // cache: templateID -> name/severity
 }
 
 // NewNucleiExecutor creates a new Nuclei-powered executor
@@ -97,6 +104,7 @@ func NewNucleiExecutor(target string, detector *WAFBypassDetector,
 		csvWriter:       csvWriter,
 		stateManager:    stateManager,
 		detailedVerbose: detailedVerbose,
+		templateMeta:    make(map[string]*templateMetaEntry),
 	}, nil
 }
 
@@ -277,6 +285,32 @@ func (ne *NucleiExecutor) Execute(ctx context.Context, templatePath string) (ret
 
 	// Finalize template stats for this batched template run (across all chunks)
 	ne.stateManager.FinalizeTemplate(templateID)
+
+	// If the template was fully bypassed, write a template-level summary row
+	if ne.stateManager.IsTemplateBypassed(templateID) {
+		stats := ne.stateManager.GetTemplateRequestStats(templateID)
+		meta := ne.templateMeta[templateID]
+		name, severity := templateID, "unknown"
+		if meta != nil {
+			name = meta.name
+			severity = meta.severity
+		}
+		totalReqs := 0
+		if stats != nil {
+			totalReqs = stats.TotalRequests
+		}
+		summary := &output.BypassedTemplateSummary{
+			TemplateID:    templateID,
+			TemplateName:  name,
+			Severity:      severity,
+			TotalRequests: totalReqs,
+		}
+		if err := ne.csvWriter.WriteBypassedTemplate(summary); err != nil {
+			gologger.Warning().Msgf("[%s] Failed to write bypassed template summary: %v", templateID, err)
+		} else {
+			gologger.Info().Msgf("[%s] ✓ Written to bypassed templates summary CSV", templateID)
+		}
+	}
 
 	return nil
 }
@@ -549,6 +583,14 @@ func (ne *NucleiExecutor) processResult(result *output.ResultEvent, flowIndex, t
 	templateName := result.TemplateID
 	if result.Info.Name != "" {
 		templateName = result.Info.Name
+	}
+
+	// Cache name/severity for use in bypassed template summary (written after FinalizeTemplate)
+	if _, exists := ne.templateMeta[result.TemplateID]; !exists {
+		ne.templateMeta[result.TemplateID] = &templateMetaEntry{
+			name:     templateName,
+			severity: severity,
+		}
 	}
 
 	wafResult := &output.WAFResult{

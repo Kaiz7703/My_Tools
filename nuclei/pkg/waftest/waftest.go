@@ -245,8 +245,10 @@ func (wt *WAFTester) PrintFinalSummary() {
 	fmt.Println("║                                                              ║")
 	
 	compPath, bypassPath := wt.csvWriter.GetPaths()
+	bypassTmplPath := wt.csvWriter.GetBypassedTemplatesPath()
 	fmt.Printf("║ Comprehensive CSV:            %-31s║\n", filepath.Base(compPath))
-	fmt.Printf("║ Bypassed CSV:                 %-31s║\n", filepath.Base(bypassPath))
+	fmt.Printf("║ Bypassed Requests CSV:        %-31s║\n", filepath.Base(bypassPath))
+	fmt.Printf("║ Bypassed Templates CSV:       %-31s║\n", filepath.Base(bypassTmplPath))
 	fmt.Println("╚══════════════════════════════════════════════════════════════╝")
 	fmt.Println()
 }

@@ -15,3 +15,13 @@ func (sm *StateManager) GetTemplateBypassRate() float64 {
 	}
 	return float64(len(sm.state.BypassedTemplates)) / float64(total) * 100.0
 }
+
+// GetTemplateRequestStats returns detailed request statistics for a specific template
+func (sm *StateManager) GetTemplateRequestStats(templateID string) *TemplateStats {
+	return sm.state.TemplateRequests[templateID]
+}
+
+// IsTemplateBypassed returns true if the template was classified as fully bypassed
+func (sm *StateManager) IsTemplateBypassed(templateID string) bool {
+	return sm.state.BypassedTemplates[templateID]
+}

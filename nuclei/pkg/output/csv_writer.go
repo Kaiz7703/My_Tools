@@ -14,14 +14,26 @@ import (
 // CSVWriter writes WAF test results to CSV files
 type CSVWriter struct {
 	sync.Mutex
-	comprehensiveFile   *os.File
-	bypassedFile        *os.File
-	comprehensiveWriter *csv.Writer
-	bypassedWriter      *csv.Writer
-	comprehensivePath   string
-	bypassedPath        string
-	resultCount         int
-	bypassedCount       int
+	comprehensiveFile          *os.File
+	bypassedFile               *os.File
+	bypassedTemplatesFile      *os.File
+	comprehensiveWriter        *csv.Writer
+	bypassedWriter             *csv.Writer
+	bypassedTemplatesWriter    *csv.Writer
+	comprehensivePath          string
+	bypassedPath               string
+	bypassedTemplatesPath      string
+	resultCount                int
+	bypassedCount              int
+	bypassedTemplatesCount     int
+}
+
+// BypassedTemplateSummary represents a template-level bypass summary (1 row per bypassed template)
+type BypassedTemplateSummary struct {
+	TemplateID   string
+	TemplateName string
+	Severity     string
+	TotalRequests int
 }
 
 // WAFResult represents a single WAF test result
@@ -48,6 +60,11 @@ func NewCSVWriter(comprehensivePath, bypassedPath string) (*CSVWriter, error) {
 		bypassedPath = base + "_bypassed" + ext
 	}
 
+	// Auto-generate bypassed templates summary path
+	ext := filepath.Ext(comprehensivePath)
+	base := comprehensivePath[:len(comprehensivePath)-len(ext)]
+	bypassedTemplatesPath := base + "_bypassed_templates" + ext
+
 	// Ensure directories exist
 	if err := os.MkdirAll(filepath.Dir(comprehensivePath), 0755); err != nil {
 		return nil, errors.Wrap(err, "failed to create comprehensive CSV directory")
@@ -69,15 +86,27 @@ func NewCSVWriter(comprehensivePath, bypassedPath string) (*CSVWriter, error) {
 		return nil, errors.Wrap(err, "failed to create bypassed CSV file")
 	}
 
+	// Open bypassed templates summary file
+	bypassTmplFile, err := os.Create(bypassedTemplatesPath)
+	if err != nil {
+		compFile.Close()
+		bypassFile.Close()
+		return nil, errors.Wrap(err, "failed to create bypassed templates CSV file")
+	}
+
 	writer := &CSVWriter{
-		comprehensiveFile:   compFile,
-		bypassedFile:        bypassFile,
-		comprehensiveWriter: csv.NewWriter(compFile),
-		bypassedWriter:      csv.NewWriter(bypassFile),
-		comprehensivePath:   comprehensivePath,
-		bypassedPath:        bypassedPath,
-		resultCount:         0,
-		bypassedCount:       0,
+		comprehensiveFile:       compFile,
+		bypassedFile:            bypassFile,
+		bypassedTemplatesFile:   bypassTmplFile,
+		comprehensiveWriter:     csv.NewWriter(compFile),
+		bypassedWriter:          csv.NewWriter(bypassFile),
+		bypassedTemplatesWriter: csv.NewWriter(bypassTmplFile),
+		comprehensivePath:       comprehensivePath,
+		bypassedPath:            bypassedPath,
+		bypassedTemplatesPath:   bypassedTemplatesPath,
+		resultCount:             0,
+		bypassedCount:           0,
+		bypassedTemplatesCount:  0,
 	}
 
 	// Write headers
@@ -117,9 +146,47 @@ func (w *CSVWriter) writeHeaders() error {
 		return errors.Wrap(err, "failed to write bypassed headers")
 	}
 
-	// Flush both
+	// Write headers for bypassed templates summary file
+	tmplHeaders := []string{
+		"Template ID",
+		"Template Name",
+		"Severity",
+		"Total Requests",
+	}
+	if err := w.bypassedTemplatesWriter.Write(tmplHeaders); err != nil {
+		return errors.Wrap(err, "failed to write bypassed templates headers")
+	}
+
+	// Flush all
 	w.comprehensiveWriter.Flush()
 	w.bypassedWriter.Flush()
+	w.bypassedTemplatesWriter.Flush()
+
+	return nil
+}
+
+// WriteBypassedTemplate writes a template-level bypass summary (1 row per bypassed template)
+func (w *CSVWriter) WriteBypassedTemplate(summary *BypassedTemplateSummary) error {
+	w.Lock()
+	defer w.Unlock()
+
+	if summary == nil {
+		return errors.New("summary cannot be nil")
+	}
+
+	row := []string{
+		summary.TemplateID,
+		summary.TemplateName,
+		summary.Severity,
+		fmt.Sprintf("%d", summary.TotalRequests),
+	}
+
+	if err := w.bypassedTemplatesWriter.Write(row); err != nil {
+		return errors.Wrap(err, "failed to write to bypassed templates CSV")
+	}
+	w.bypassedTemplatesWriter.Flush()
+	w.bypassedTemplatesFile.Sync()
+	w.bypassedTemplatesCount++
 
 	return nil
 }
@@ -187,6 +254,7 @@ func (w *CSVWriter) Flush() error {
 
 	w.comprehensiveWriter.Flush()
 	w.bypassedWriter.Flush()
+	w.bypassedTemplatesWriter.Flush()
 
 	var errs []error
 	if err := w.comprehensiveWriter.Error(); err != nil {
@@ -195,23 +263,29 @@ func (w *CSVWriter) Flush() error {
 	if err := w.bypassedWriter.Error(); err != nil {
 		errs = append(errs, errors.Wrap(err, "bypassed writer flush error"))
 	}
+	if err := w.bypassedTemplatesWriter.Error(); err != nil {
+		errs = append(errs, errors.Wrap(err, "bypassed templates writer flush error"))
+	}
 
 	if len(errs) > 0 {
 		return errors.Errorf("errors flushing CSV writer: %v", errs)
 	}
 
-	// We also optionally Sync the file descriptior to disk immediately
+	// Sync all file descriptors to disk
 	if w.comprehensiveFile != nil {
 		w.comprehensiveFile.Sync()
 	}
 	if w.bypassedFile != nil {
 		w.bypassedFile.Sync()
 	}
+	if w.bypassedTemplatesFile != nil {
+		w.bypassedTemplatesFile.Sync()
+	}
 
 	return nil
 }
 
-// Close closes both CSV files
+// Close closes all CSV files
 func (w *CSVWriter) Close() error {
 	w.Lock()
 	defer w.Unlock()
@@ -221,6 +295,7 @@ func (w *CSVWriter) Close() error {
 	// Flush writers
 	w.comprehensiveWriter.Flush()
 	w.bypassedWriter.Flush()
+	w.bypassedTemplatesWriter.Flush()
 
 	// Check for flush errors
 	if err := w.comprehensiveWriter.Error(); err != nil {
@@ -229,6 +304,9 @@ func (w *CSVWriter) Close() error {
 	if err := w.bypassedWriter.Error(); err != nil {
 		errs = append(errs, errors.Wrap(err, "bypassed writer flush error"))
 	}
+	if err := w.bypassedTemplatesWriter.Error(); err != nil {
+		errs = append(errs, errors.Wrap(err, "bypassed templates writer flush error"))
+	}
 
 	// Close files
 	if err := w.comprehensiveFile.Close(); err != nil {
@@ -236,6 +314,9 @@ func (w *CSVWriter) Close() error {
 	}
 	if err := w.bypassedFile.Close(); err != nil {
 		errs = append(errs, errors.Wrap(err, "failed to close bypassed file"))
+	}
+	if err := w.bypassedTemplatesFile.Close(); err != nil {
+		errs = append(errs, errors.Wrap(err, "failed to close bypassed templates file"))
 	}
 
 	if len(errs) > 0 {
@@ -259,7 +340,19 @@ func (w *CSVWriter) GetBypassedCount() int {
 	return w.bypassedCount
 }
 
-// GetPaths returns the paths of both CSV files
+// GetPaths returns the paths of all CSV files
 func (w *CSVWriter) GetPaths() (comprehensive, bypassed string) {
 	return w.comprehensivePath, w.bypassedPath
+}
+
+// GetBypassedTemplatesPath returns the path of the bypassed templates summary CSV
+func (w *CSVWriter) GetBypassedTemplatesPath() string {
+	return w.bypassedTemplatesPath
+}
+
+// GetBypassedTemplatesCount returns the number of bypassed template summaries written
+func (w *CSVWriter) GetBypassedTemplatesCount() int {
+	w.Lock()
+	defer w.Unlock()
+	return w.bypassedTemplatesCount
 }
